@@ -1,0 +1,37 @@
+# Build output
+build/
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+firmware/dependencies.lock
+tests/host/build/
+sim/build/
+web/dist/
+web/node_modules/
+web/.vite/
+web/playwright-report/
+web/test-results/
+firmware/main/web_assets/
+coverage/
+*.bin
+*.elf
+*.map
+
+# Local configuration and secrets
+secrets.ini
+.env
+.env.*
+!.env.example
+local/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Generated assets
+web/dist/
+firmware/main/generated/
+firmware/components/ui/generated/

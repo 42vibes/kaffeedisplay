@@ -1,0 +1,952 @@
+openapi: 3.1.0
+info:
+  title: Kaffeekasse Admin API
+  version: 1.0.0
+  description: |
+    Admin API served by the ESP32 device. All monetary values are integer cents.
+    Authentication is a single admin account with an HttpOnly session cookie.
+    Mutating requests must send the CSRF token returned by `GET /auth/me` in the
+    `X-CSRF-Token` header. Write requests should send `X-Request-Id` (UUID) for
+    idempotency.
+servers:
+  - url: http://192.168.4.1/api/v1
+  - url: http://kaffeekasse.local/api/v1
+tags:
+  - name: auth
+  - name: users
+  - name: products
+  - name: transactions
+  - name: expenses
+  - name: cash
+  - name: reports
+  - name: settings
+  - name: system
+security:
+  - cookieAuth: []
+paths:
+  /health:
+    get:
+      security: []
+      summary: Liveness probe
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: ok }
+                  version: { type: string }
+  /auth/login:
+    post:
+      security: []
+      summary: Admin login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Session created
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /auth/logout:
+    post:
+      summary: Destroy session
+      responses:
+        '204': { description: Logged out }
+  /auth/me:
+    get:
+      summary: Current session and CSRF token
+      responses:
+        '200':
+          description: Session
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Session'
+                  - type: object
+                    properties:
+                      csrf_token: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /users:
+    get:
+      summary: List coffee users with balances
+      responses:
+        '200':
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UserWithBalance' }
+    post:
+      summary: Create a coffee user
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 40 }
+                color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /users/{id}:
+    patch:
+      summary: Update or reactivate a user
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 40 }
+                color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+                active: { type: boolean }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /users/{id}/archive:
+    post:
+      summary: Archive a user (history is retained)
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Archived
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /users/{id}/topup:
+    post:
+      summary: Record a cash payment / deposit for a user
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_cents]
+              properties:
+                amount_cents: { type: integer, minimum: 1, maximum: 1000000 }
+                note: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Booking created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /users/{id}/adjust:
+    post:
+      summary: Correct a user balance (not cash)
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_cents, note]
+              properties:
+                amount_cents: { type: integer, minimum: -1000000, maximum: 1000000 }
+                note: { type: string, minLength: 3, maxLength: 200 }
+      responses:
+        '200':
+          description: Booking created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+  /users/{id}/transactions:
+    get:
+      summary: User transaction history
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: before
+          in: query
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Events, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Event' }
+  /products:
+    get:
+      summary: List drinks and offerings
+      parameters:
+        - name: include_archived
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Products
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Product' }
+    post:
+      summary: Create a product
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+  /products/{id}:
+    patch:
+      summary: Update a product
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+    delete:
+      summary: Delete a product (historical events keep snapshots)
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '204': { description: Deleted }
+  /transactions:
+    get:
+      summary: Ledger events
+      parameters:
+        - name: user_id
+          in: query
+          schema: { type: string }
+        - name: type
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: to
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: Events, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Event' }
+  /transactions/{id}/void:
+    post:
+      summary: Reverse a booking (never deletes history)
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 200 }
+      responses:
+        '200':
+          description: Reversal event
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /expenses:
+    get:
+      summary: List expenses
+      parameters:
+        - name: from
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: to
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: include_voided
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Expenses
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Expense' }
+    post:
+      summary: Add an expense
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpenseInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Expense' }
+  /expenses/{id}:
+    patch:
+      summary: Edit an expense
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpenseInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Expense' }
+  /expenses/{id}/void:
+    post:
+      summary: Void an expense
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3 }
+      responses:
+        '200':
+          description: Reversal event
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+  /cash-counts:
+    get:
+      summary: Cash reconciliation history
+      responses:
+        '200':
+          description: Counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CashCount' }
+    post:
+      summary: Record a physical cash count
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [counted_cents]
+              properties:
+                counted_cents: { type: integer, minimum: 0 }
+                note: { type: string, maxLength: 200 }
+      responses:
+        '201':
+          description: Count recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashCount' }
+  /stats/summary:
+    get:
+      summary: Fund health
+      responses:
+        '200':
+          description: Summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Summary' }
+  /stats/leaderboard:
+    get:
+      summary: Monthly consumption leaderboard (no money)
+      parameters:
+        - name: month
+          in: query
+          description: YYYY-MM in Europe/Berlin
+          schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' }
+      responses:
+        '200':
+          description: Leaderboard
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Leaderboard' }
+  /reports/{kind}:
+    get:
+      summary: Report data or CSV export
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [overview, consumption, deposits, expenses, cashflow, balances, transactions]
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [week, month, year, all, custom]
+            default: month
+        - name: from
+          in: query
+          description: Unix seconds, required for custom
+          schema: { type: integer, format: int64 }
+        - name: to
+          in: query
+          description: Unix seconds, exclusive
+          schema: { type: integer, format: int64 }
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv_excel, csv_raw]
+            default: json
+      responses:
+        '200':
+          description: Report JSON or CSV download
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+            text/csv:
+              schema: { type: string }
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+  /settings:
+    get:
+      summary: All non-secret settings
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+    put:
+      summary: Replace settings
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Settings' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+  /settings/display:
+    get:
+      summary: Display settings
+      responses:
+        '200':
+          description: Display settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DisplaySettings' }
+    put:
+      summary: Apply display rotation and brightness live
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DisplaySettings' }
+      responses:
+        '200':
+          description: Applied
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DisplaySettings' }
+  /settings/password:
+    post:
+      summary: Change admin password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string, format: password }
+                new_password: { type: string, minLength: 10 }
+      responses:
+        '204': { description: Changed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /time:
+    get:
+      summary: Time status
+      responses:
+        '200':
+          description: Time info
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TimeInfo' }
+  /time/sync:
+    post:
+      summary: Set device time from the admin browser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [epoch_ms]
+              properties:
+                epoch_ms: { type: integer, format: int64 }
+                timezone: { type: string, default: Europe/Berlin }
+      responses:
+        '200':
+          description: Synced
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TimeInfo' }
+  /ap:
+    get:
+      summary: AP state and QR payloads
+      responses:
+        '200':
+          description: AP status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApStatus' }
+  /ap/start:
+    post:
+      summary: Start the admin AP (same as the device button)
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApStatus' }
+  /ap/stop:
+    post:
+      summary: Stop the admin AP; the current connection will drop
+      responses:
+        '204': { description: Stopped }
+  /ap/extend:
+    post:
+      summary: Extend the AP window
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seconds: { type: integer, minimum: 60, maximum: 3600, default: 600 }
+      responses:
+        '200':
+          description: Extended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApStatus' }
+  /device:
+    get:
+      summary: Device diagnostics
+      responses:
+        '200':
+          description: Device status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceStatus' }
+  /display/test:
+    post:
+      summary: Show a rotation/touch test pattern on the device
+      responses:
+        '204': { description: Test pattern shown }
+  /backup:
+    get:
+      summary: Download a full JSON backup (no secrets)
+      responses:
+        '200':
+          description: Backup
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+  /restore:
+    post:
+      summary: Restore a backup (creates a new snapshot)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '204': { description: Restored }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /ota:
+    post:
+      summary: Upload a firmware image
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [firmware]
+              properties:
+                firmware:
+                  type: string
+                  format: binary
+      responses:
+        '200': { description: Image written, device will reboot }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /logs:
+    get:
+      summary: Recent device log lines
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+      responses:
+        '200':
+          description: Logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lines:
+                    type: array
+                    items: { type: string }
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: kaffee_session
+  parameters:
+    PathId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema: { type: string, maxLength: 64 }
+  responses:
+    BadRequest:
+      description: Invalid input
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Not authenticated
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: Rate limited
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+    Session:
+      type: object
+      properties:
+        username: { type: string }
+        expires_at: { type: integer, format: int64 }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        color: { type: string }
+        active: { type: boolean }
+        created_at: { type: integer, format: int64 }
+        archived_at: { type: integer, format: int64 }
+    UserWithBalance:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            balance_cents: { type: integer, format: int64 }
+            last_booking_at: { type: integer, format: int64 }
+    Product:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        category: { type: string }
+        icon: { type: string }
+        color: { type: string }
+        price_cents: { type: integer, format: int64 }
+        sort: { type: integer }
+        active: { type: boolean }
+        created_at: { type: integer, format: int64 }
+        updated_at: { type: integer, format: int64 }
+    ProductInput:
+      type: object
+      required: [name, category, price_cents]
+      properties:
+        name: { type: string, maxLength: 40 }
+        category: { type: string, maxLength: 40 }
+        icon: { type: string, maxLength: 40 }
+        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        price_cents: { type: integer, minimum: 0, maximum: 100000 }
+        sort: { type: integer }
+        active: { type: boolean, default: true }
+    Event:
+      type: object
+      properties:
+        seq: { type: integer, format: int64 }
+        id: { type: string }
+        ts: { type: integer, format: int64 }
+        time_source: { type: string, enum: [synced, restored, unset] }
+        type: { type: string }
+        user_id: { type: string }
+        user_name: { type: string }
+        product_id: { type: string }
+        product_name: { type: string }
+        product_category: { type: string }
+        unit_amount_cents: { type: integer, format: int64 }
+        amount_cents: { type: integer, format: int64 }
+        payment: { type: string, enum: [balance, cash, ''] }
+        note: { type: string }
+        actor: { type: string }
+        request_id: { type: string }
+        reverses: { type: string }
+        voided: { type: boolean }
+        balance_after_cents: { type: integer, format: int64 }
+    Expense:
+      type: object
+      properties:
+        id: { type: string }
+        ts: { type: integer, format: int64 }
+        category: { type: string }
+        description: { type: string }
+        vendor: { type: string }
+        amount_cents: { type: integer, format: int64 }
+        note: { type: string }
+        voided: { type: boolean }
+    ExpenseInput:
+      type: object
+      required: [category, description, amount_cents]
+      properties:
+        category: { type: string, maxLength: 40 }
+        description: { type: string, maxLength: 120 }
+        vendor: { type: string, maxLength: 80 }
+        amount_cents: { type: integer, minimum: 1, maximum: 10000000 }
+        note: { type: string, maxLength: 300 }
+    CashCount:
+      type: object
+      properties:
+        id: { type: string }
+        ts: { type: integer, format: int64 }
+        counted_cents: { type: integer, format: int64 }
+        expected_cents: { type: integer, format: int64 }
+        difference_cents: { type: integer, format: int64 }
+        note: { type: string }
+    Summary:
+      type: object
+      properties:
+        cash_expected_cents: { type: integer, format: int64 }
+        prepaid_cents: { type: integer, format: int64 }
+        debts_cents: { type: integer, format: int64 }
+        net_liabilities_cents: { type: integer, format: int64 }
+        equity_cents: { type: integer, format: int64 }
+        member_sales_cents: { type: integer, format: int64 }
+        guest_sales_cents: { type: integer, format: int64 }
+        topups_cents: { type: integer, format: int64 }
+        expenses_cents: { type: integer, format: int64 }
+        member_items: { type: integer }
+        guest_items: { type: integer }
+    Leaderboard:
+      type: object
+      properties:
+        from: { type: integer, format: int64 }
+        to: { type: integer, format: int64 }
+        guest_count: { type: integer }
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              user_id: { type: string }
+              name: { type: string }
+              color: { type: string }
+              count: { type: integer }
+    DisplaySettings:
+      type: object
+      properties:
+        rotation: { type: integer, enum: [0, 90, 180, 270] }
+        brightness_active: { type: integer, minimum: 5, maximum: 100 }
+        brightness_idle: { type: integer, minimum: 1, maximum: 100 }
+        dim_timeout_s: { type: integer, minimum: 0, maximum: 86400 }
+        screen_off_timeout_s: { type: integer, minimum: 0, maximum: 86400 }
+    Settings:
+      type: object
+      properties:
+        display: { $ref: '#/components/schemas/DisplaySettings' }
+        network:
+          type: object
+          properties:
+            ap_ssid: { type: string }
+            ap_window_s: { type: integer }
+            hostname: { type: string }
+            sta_enabled: { type: boolean }
+            sta_ssid: { type: string }
+            napt_enabled: { type: boolean }
+        time:
+          type: object
+          properties:
+            timezone: { type: string }
+            sntp_enabled: { type: boolean }
+            sntp_server: { type: string }
+        app:
+          type: object
+          properties:
+            currency: { type: string }
+            locale: { type: string }
+            guest_enabled: { type: boolean }
+            max_open_debt_cents: { type: integer }
+            low_balance_warning_cents: { type: integer }
+    TimeInfo:
+      type: object
+      properties:
+        now: { type: integer, format: int64 }
+        source: { type: string, enum: [synced, restored, unset] }
+        last_sync: { type: integer, format: int64 }
+        last_source: { type: string }
+        trusted: { type: boolean }
+    ApStatus:
+      type: object
+      properties:
+        active: { type: boolean }
+        remaining_seconds: { type: integer }
+        ssid: { type: string }
+        password: { type: string }
+        ip: { type: string }
+        url: { type: string }
+        wifi_qr: { type: string }
+        url_qr: { type: string }
+    DeviceStatus:
+      type: object
+      properties:
+        firmware_version: { type: string }
+        build_date: { type: string }
+        uptime_s: { type: integer }
+        free_heap: { type: integer }
+        free_psram: { type: integer }
+        storage_used: { type: integer }
+        storage_total: { type: integer }
+        temperature_c: { type: number }
+        temperature_valid: { type: boolean }
+        mac: { type: string }
+        network: { type: object, additionalProperties: true }
+        time: { $ref: '#/components/schemas/TimeInfo' }
+        drinks_today: { type: integer }

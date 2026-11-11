@@ -1,0 +1,44 @@
+# T-007 — HIL tools, fonts/assets, release pipeline
+
+Status: ready
+Track: qa
+Owner: –
+Branch: `feat/T-007-tooling`
+
+## Context
+
+We need reproducible builds, deterministic fonts/assets, hardware smoke tests and
+release artifacts, without blocking feature work.
+
+## Deliverables
+
+1. `tools/gen_fonts.py` or shell script: pinned `lv_font_conv` version, Inter /
+   Montserrat subset with German umlauts, `€`, digits, punctuation. Output to
+   `firmware/components/ui/generated/` (gitignored) or committed with a
+   generated header. Document the choice.
+2. Web asset embedding script: `web/dist` → compressed C array / `EMBED_FILES`
+   manifest for `api`; verify gzip < 400 KB.
+3. `tools/hil.py`: pytest/pyserial/requests smoke test:
+   flash, boot log, AP or LAN, login, create temp user/product, purchase, topup,
+   void, CSV download, cleanup.
+4. `.github/workflows/release.yml`: tag → firmware build in Docker, web build,
+   sha256, attach `firmware.bin`, `manifest.json`, changelog.
+5. Pre-commit/`make fmt` for C++ + TS; docs link checker; OpenAPI lint in CI.
+6. `tools/settime.py` serial clock set; serial CLI commands documented.
+
+## Acceptance
+
+- `make check` runs host tests, web typecheck/tests/build, OpenAPI lint, size
+  budgets.
+- Release workflow produces a flashable image and checksums from a tag.
+- HIL script passes on the connected board (or is skipped clearly when absent).
+- Fonts render umlauts/€ at 480×480.
+
+## Files
+
+`tools/**`, `.github/workflows/**`, `Makefile`, `docs/operations.md`,
+`docs/testing.md`.
+
+## Evidence
+
+<!-- PR, CI run, release artifact -->
