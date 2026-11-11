@@ -39,4 +39,6 @@ on the device; generate rows from ledger events and stream CSV.
 
 ## Evidence
 
-<!-- PR, sample CSV, Excel screenshot -->
+- PR: https://github.com/Babo96/kaffeedisplay/pull/2
+- Host tests: 30 cases / 885 assertions (`make test-host`)
+- Golden CSVs: `tests/host/golden/reports/`
