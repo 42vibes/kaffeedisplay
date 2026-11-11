@@ -1,9 +1,9 @@
 # T-003 — Board bring-up + 3-page LVGL device UI
 
-Status: ready
+Status: review
 Track: embedded
-Owner: –
-Branch: `feat/T-003-device-ui`
+Owner: ui-agent
+Branch: `feat/T-004-ui`
 
 ## Context
 
@@ -48,4 +48,6 @@ Interface: `firmware/components/board/include/kaffee/board.hpp` and
 
 ## Evidence
 
-<!-- Serial log, photos/screenshots, fps measurements, PR -->
+- LVGL 9.6 device UI (3 pages, German, espresso theme) in `firmware/components/ui/`.
+- Host simulator screenshots in `docs/ui/screenshots/`.
+- PR: feat/T-004-ui (opened from this worktree).

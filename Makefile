@@ -7,7 +7,7 @@ IDF ?= $(shell command -v idf.py 2>/dev/null)
 NPM ?= npm
 CMAKE ?= cmake
 
-.PHONY: help bootstrap build build-native build-docker flash flash-docker monitor test test-host test-web test-e2e e2e hil web web-dev mock sim fmt fmt-check lint check clean
+.PHONY: help bootstrap build build-native build-docker flash flash-docker monitor test test-host test-web test-e2e e2e hil web web-dev mock sim sim-build screenshots fmt fmt-check lint check clean
 
 help:
 	@echo "Kaffeekasse targets:"
@@ -18,6 +18,7 @@ help:
 	@echo "  web           build admin SPA"
 	@echo "  web-dev       Vite + mock API"
 	@echo "  sim           build and run the LVGL simulator"
+	@echo "  screenshots   regenerate docs/ui/screenshots from the simulator"
 	@echo "  test          host + web tests"
 	@echo "  check         format, lint, tests, builds, size budgets"
 	@echo "  fmt           format C++ and TypeScript"
@@ -80,20 +81,29 @@ flash:
 monitor:
 	@if [ -n "$(IDF)" ]; then cd firmware && idf.py -p $(PORT) monitor; else docker run --rm -it -v "$(CURDIR)/firmware:/project" -w /project --device=$(PORT) $(IDF_IMAGE) idf.py -p $(PORT) monitor; fi
 
-sim:
-	$(CMAKE) -S sim -B sim/build
+sim-build:
+	$(CMAKE) -S sim -B sim/build -DCMAKE_BUILD_TYPE=Release
 	$(CMAKE) --build sim/build -j
+
+sim: sim-build
 	./sim/build/kaffeekasse-sim
+
+screenshots: sim-build
+	./sim/build/kaffeekasse-sim --screenshot docs/ui/screenshots/01-idle.png --page 1 --state idle
+	./sim/build/kaffeekasse-sim --screenshot docs/ui/screenshots/02-user-selected.png --page 1 --state selected
+	./sim/build/kaffeekasse-sim --screenshot docs/ui/screenshots/03-booking-toast.png --page 1 --state toast
+	./sim/build/kaffeekasse-sim --screenshot docs/ui/screenshots/04-leaderboard.png --page 2 --state idle
+	./sim/build/kaffeekasse-sim --screenshot docs/ui/screenshots/05-system-ap-qr.png --page 3 --state ap
 
 fmt:
 	@if command -v clang-format >/dev/null; then \
-		find firmware tests/host sim -path '*/third_party' -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null | xargs -r clang-format -i; \
+		find firmware tests/host sim \( -path '*/third_party' -o -path '*/build' -o -path '*/_deps' -o -path '*/managed_components' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null | xargs -r clang-format -i; \
 	fi
 	$(NPM) --prefix web run typecheck
 
 fmt-check:
 	@if command -v clang-format >/dev/null; then \
-		files=$$(find firmware tests/host sim -path '*/third_party' -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null); \
+		files=$$(find firmware tests/host sim \( -path '*/third_party' -o -path '*/build' -o -path '*/_deps' -o -path '*/managed_components' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null); \
 		clang-format --dry-run --Werror $$files; \
 	else echo "clang-format not installed, skipping"; fi
 

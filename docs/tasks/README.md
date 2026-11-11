@@ -7,10 +7,10 @@ file as you work; put the PR link under Evidence when done.
 |---|---|---|---|---|---|
 | T-001 | Domain, storage, service implementation | backend | foundation | – | ready |
 | T-002 | Admin SPA: all pages + German UI | web | foundation | – | ready |
-| T-003 | Board bring-up + 3-page LVGL device UI | embedded | foundation | – | ready |
+| T-003 | Board bring-up + 3-page LVGL device UI | embedded | foundation | ui-agent | review |
 | T-004 | HTTP API, auth, AP/time, backup/OTA | backend | T-001 | – | blocked on T-001 |
 | T-005 | Reports + Excel CSV backend | backend | T-001 | – | blocked on T-001 |
-| T-006 | LVGL simulator + screenshots + README | ui | T-003 | – | blocked on T-003 |
+| T-006 | LVGL simulator + screenshots + README | ui | T-003 | ui-agent | review |
 | T-007 | HIL tools, fonts/assets, release pipeline | qa | foundation | – | ready |
 
 ## Workflow
