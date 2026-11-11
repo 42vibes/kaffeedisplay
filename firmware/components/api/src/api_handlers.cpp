@@ -435,6 +435,7 @@ esp_err_t handle_users_transactions(RequestContext& ctx) {
     if (limit < 1) limit = 1;
     if (limit > 200) limit = 200;
     auto before = query_int(query, "before");
+    if (before && *before < 0) before.reset();
 
     std::vector<const Event*> selected;
     const auto& events = service.events();

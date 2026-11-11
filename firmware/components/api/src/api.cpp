@@ -269,6 +269,7 @@ esp_err_t send_chunked_text(httpd_req_t* req, int status, const char* content_ty
     if (content_disposition != nullptr) {
         httpd_resp_set_hdr(req, "Content-Disposition", content_disposition);
     }
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     set_security_headers(req);
 
     constexpr size_t kSlice = 4096;

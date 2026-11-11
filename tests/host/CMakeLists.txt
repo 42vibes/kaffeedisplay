@@ -31,6 +31,7 @@ target_include_directories(kaffee_tests PRIVATE
   ${DOMAIN_DIR}/include
   ${DOMAIN_DIR}/third_party
   ${API_DIR}/include
+  ${API_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
 )
 

@@ -4,6 +4,8 @@
 #include <string>
 
 #include "kaffee/api_util.hpp"
+#include "kaffee/sha256.hpp"
+#include "sha256_stream.hpp"
 
 using namespace kaffee;
 using namespace kaffee::api;
@@ -195,4 +197,24 @@ TEST_CASE("misc helpers") {
     CHECK(parse_bool_text("off", flag));
     CHECK_FALSE(flag);
     CHECK_FALSE(parse_bool_text("vielleicht", flag));
+}
+
+TEST_CASE("streaming SHA-256 matches the one-shot helper") {
+    std::string data;
+    data.reserve(5000);
+    for (size_t i = 0; i < 5000; ++i) {
+        data.push_back(static_cast<char>((i * 31 + 7) % 251));
+    }
+    const std::string expected = sha256_hex(data);
+    for (size_t chunk :
+         {size_t{1}, size_t{3}, size_t{7}, size_t{64}, size_t{65}, size_t{1000}, size_t{5000}}) {
+        Sha256Stream stream;
+        for (size_t offset = 0; offset < data.size(); offset += chunk) {
+            size_t take = std::min(chunk, data.size() - offset);
+            stream.update(reinterpret_cast<const uint8_t*>(data.data() + offset), take);
+        }
+        CHECK(stream.hex() == expected);
+    }
+    Sha256Stream empty;
+    CHECK(empty.hex() == sha256_hex(""));
 }
