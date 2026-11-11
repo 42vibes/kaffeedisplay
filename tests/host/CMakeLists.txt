@@ -16,9 +16,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 set(DOMAIN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/domain)
+set(BOARD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/board)
 
 add_executable(kaffee_tests
   domain_test.cpp
+  touch_transform_test.cpp
   ${DOMAIN_DIR}/src/domain.cpp
   ${DOMAIN_DIR}/src/json.cpp
   ${DOMAIN_DIR}/src/sha256.cpp
@@ -27,7 +29,11 @@ add_executable(kaffee_tests
 target_include_directories(kaffee_tests PRIVATE
   ${DOMAIN_DIR}/include
   ${DOMAIN_DIR}/third_party
+  ${BOARD_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
 )
 
-target_compile_definitions(kaffee_tests PRIVATE DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN)
+# Only one translation unit may define doctest's implementation/main.
+set_source_files_properties(domain_test.cpp PROPERTIES
+  COMPILE_DEFINITIONS DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+)
