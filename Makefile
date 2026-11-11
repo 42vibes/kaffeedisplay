@@ -87,13 +87,13 @@ sim:
 
 fmt:
 	@if command -v clang-format >/dev/null; then \
-		find firmware tests/host sim -path '*/third_party' -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null | xargs -r clang-format -i; \
+		find firmware tests/host sim -path '*/third_party' -prune -o -path '*/build' -prune -o -path '*/managed_components' -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null | xargs -r clang-format -i; \
 	fi
 	$(NPM) --prefix web run typecheck
 
 fmt-check:
 	@if command -v clang-format >/dev/null; then \
-		files=$$(find firmware tests/host sim -path '*/third_party' -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null); \
+		files=$$(find firmware tests/host sim -path '*/third_party' -prune -o -path '*/build' -prune -o -path '*/managed_components' -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null); \
 		clang-format --dry-run --Werror $$files; \
 	else echo "clang-format not installed, skipping"; fi
 

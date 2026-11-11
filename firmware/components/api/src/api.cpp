@@ -409,7 +409,7 @@ std::string req_query(httpd_req_t* req) {
 std::string client_ip(httpd_req_t* req) {
     int fd = httpd_req_to_sockfd(req);
     if (fd < 0) return "0.0.0.0";
-    struct sockaddr_in addr{};
+    struct sockaddr_in addr = {};
     socklen_t len = sizeof(addr);
     if (getpeername(fd, reinterpret_cast<struct sockaddr*>(&addr), &len) != 0) {
         return "0.0.0.0";
