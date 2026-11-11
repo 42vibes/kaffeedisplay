@@ -14,9 +14,13 @@ namespace kaffee {
 class INetworkListener {
   public:
     virtual ~INetworkListener() = default;
-    // Called from a network/event task when availability changes. The initial
-    // state may be delivered synchronously from set_listener().
+    // Called from the network timer task when availability changes. The initial
+    // state may be delivered from that task shortly after set_listener().
+    // Keep callbacks non-blocking; enqueue work onto the consumer's own task.
     virtual void on_network_state_changed(const NetworkStatus& status) = 0;
+    // Called from the network timer task after the AP is confirmed stopped.
+    // The HTTP server must be stopped from the consumer's task, not here.
+    virtual void on_ap_stopped() {}
 };
 
 // ESP-IDF implementation of INetwork. Construction is cheap; all hardware is
@@ -50,6 +54,10 @@ class NetworkManager final : public INetwork {
     void set_listener(INetworkListener* listener);
     void set_settings_provider(SettingsProvider provider);
     Result<Unit> apply_time_settings(const TimeSettings& settings);
+    // Erases the `kaffee_net` NVS namespace (AP credentials, stored wall clock)
+    // and regenerates AP credentials. Storage factory reset must call this or
+    // erase the namespace directly.
+    Result<Unit> factory_reset_credentials();
 
     // Effective credentials and QR/URL helpers. The AP password is only
     // meaningful while the AP is active.

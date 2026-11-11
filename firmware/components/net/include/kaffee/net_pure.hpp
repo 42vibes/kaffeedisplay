@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -71,5 +72,19 @@ bool is_time_sane(int64_t epoch_seconds, int64_t reference_now = 0);
 
 // Europe/Berlin offset in seconds (3600 CET, 7200 CEST) for a UTC timestamp.
 int berlin_utc_offset_seconds(int64_t epoch_seconds);
+
+// Builds a DNS response for the captive responder.
+//   A (IN)     -> 192.168.4.1
+//   AAAA (IN)  -> NOERROR with no answers
+//   everything -> NXDOMAIN
+// Returns false for malformed queries, responses, non-standard opcodes,
+// QDCOUNT != 1, compression pointers, missing root labels, or insufficient
+// output capacity.
+bool build_dns_response(const uint8_t* query, size_t query_length, uint8_t* response,
+                        size_t capacity, size_t& response_length);
+
+// 1..32 bytes, ASCII letters/digits/hyphen, must not start or end with '-'.
+// The ".local" suffix must be stripped before calling this.
+bool is_valid_hostname(std::string_view hostname);
 
 }  // namespace kaffee

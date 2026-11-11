@@ -39,7 +39,7 @@ constexpr uint8_t kApMaxClients = 4;
 constexpr uint8_t kDhcpOfferDns = 0x02;  // DHCPS_OFFER_DNS
 constexpr int64_t kTimePersistIntervalS = 5 * 60;
 constexpr BaseType_t kNetTaskPriority = 5;
-constexpr uint32_t kNetTaskStack = 3072;
+constexpr uint32_t kNetTaskStack = 4096;
 constexpr uint32_t kDnsTaskStack = 4096;
 constexpr uint32_t kDnsPort = 53;
 
@@ -128,94 +128,9 @@ Timestamp uptime_now() {
     return static_cast<Timestamp>(esp_timer_get_time() / 1000000LL);
 }
 
-// Minimal captive DNS responder. A queries get the portal address, AAAA gets an
-// empty NOERROR answer (so clients fall back to A), everything else NXDOMAIN.
-bool build_dns_response(const uint8_t* query, size_t query_length, uint8_t* response,
-                        size_t capacity, size_t& response_length) {
-    if (query_length < 12 || capacity < 12) {
-        return false;
-    }
-    if ((query[2] & 0x80) != 0) {  // ignore responses
-        return false;
-    }
-    if ((query[2] & 0x78) != 0) {  // only standard queries
-        return false;
-    }
-    const uint16_t question_count = static_cast<uint16_t>((query[4] << 8) | query[5]);
-    if (question_count != 1) {
-        return false;
-    }
-
-    size_t offset = 12;
-    bool terminated = false;
-    while (offset < query_length) {
-        const uint8_t label_length = query[offset];
-        if (label_length == 0) {
-            ++offset;
-            terminated = true;
-            break;
-        }
-        if ((label_length & 0xC0) != 0) {  // compression is not valid in a question
-            return false;
-        }
-        offset += 1 + label_length;
-        if (offset > query_length) {
-            return false;
-        }
-    }
-    if (!terminated || offset + 4 > query_length) {
-        return false;
-    }
-
-    const uint16_t qtype = static_cast<uint16_t>((query[offset] << 8) | query[offset + 1]);
-    const uint16_t qclass = static_cast<uint16_t>((query[offset + 2] << 8) | query[offset + 3]);
-    const bool is_a = qtype == 1 && qclass == 1;
-    const bool is_aaaa = qtype == 28 && qclass == 1;
-    const size_t question_length = offset + 4 - 12;
-    const size_t answer_length = is_a ? 16 : 0;
-    const size_t total = 12 + question_length + answer_length;
-    if (total > capacity) {
-        return false;
-    }
-
-    std::memset(response, 0, total);
-    std::memcpy(response, query, 12);
-    // QR + AA + copied RD; RA set; NOERROR or NXDOMAIN.
-    response[2] = static_cast<uint8_t>(0x84 | (query[2] & 0x01));
-    response[3] = (is_a || is_aaaa) ? 0x80 : 0x83;
-    response[4] = 0;
-    response[5] = 1;
-    response[6] = 0;
-    response[7] = is_a ? 1 : 0;
-    std::memcpy(response + 12, query + 12, question_length);
-
-    if (is_a) {
-        uint8_t* answer = response + 12 + question_length;
-        answer[0] = 0xC0;
-        answer[1] = 0x0C;  // pointer to the question name
-        answer[2] = 0;
-        answer[3] = 1;  // TYPE A
-        answer[4] = 0;
-        answer[5] = 1;  // CLASS IN
-        answer[6] = 0;
-        answer[7] = 0;
-        answer[8] = 0;
-        answer[9] = 60;  // TTL
-        answer[10] = 0;
-        answer[11] = 4;
-        answer[12] = 192;
-        answer[13] = 168;
-        answer[14] = 4;
-        answer[15] = 1;
-    }
-
-    response_length = total;
-    return true;
-}
-
 // When NAPT is active, relay DNS to the STA uplink so AP clients really have
-// internet. The captive responder above remains the fallback when forwarding
-// fails or NAPT is disabled.
+// internet. The captive responder in net_pure remains the fallback when
+// forwarding fails or NAPT is disabled.
 bool forward_dns_query(uint32_t server_address, const uint8_t* query, size_t query_length,
                        uint8_t* response, size_t capacity, size_t& response_length) {
     if (server_address == 0 || server_address == htonl(0xC0A80401)) {
@@ -264,8 +179,11 @@ struct NetworkManager::Impl {
     bool wifi_initialized = false;
     bool wifi_started = false;
     bool sta_connected = false;
-    bool ap_requested = false;
+    bool ap_desired = false;
     bool ap_active = false;
+    uint32_t ap_intent_generation = 0;
+    uint32_t ap_start_generation = 0;
+    uint32_t ap_stop_pending_generation = 0;
 
     esp_netif_t* sta_netif = nullptr;
     esp_netif_t* ap_netif = nullptr;
@@ -299,6 +217,9 @@ struct NetworkManager::Impl {
     std::atomic<bool> dns_requested{false};
     std::atomic<bool> dns_task_exited{false};
     std::atomic<bool> timer_task_exited{false};
+    std::atomic<bool> state_notify_pending{false};
+    std::atomic<bool> ap_stopped_pending{false};
+    std::atomic<bool> ap_stop_pending{false};
     TaskHandle_t dns_task = nullptr;
     TaskHandle_t timer_task = nullptr;
 
@@ -312,11 +233,26 @@ struct NetworkManager::Impl {
 
     bool sta_configured_locked() const {
         return settings.network.sta_enabled && !settings.network.sta_ssid.empty() &&
-               settings.network.sta_password.size() >= 8;
+               settings.network.sta_ssid.size() <= 32 &&
+               settings.network.sta_password.size() >= 8 &&
+               settings.network.sta_password.size() <= 63;
     }
 
     bool sta_ready_locked() const {
         return sta_configured_locked() && sta_netif != nullptr;
+    }
+
+    bool ap_mode_active_locked() const {
+        if (!wifi_started) {
+            return false;
+        }
+        wifi_mode_t mode = WIFI_MODE_NULL;
+        if (esp_wifi_get_mode(&mode) != ESP_OK) {
+            // Be conservative: if the mode is unknown, let stop_ap() attempt a
+            // driver stop instead of failing open.
+            return true;
+        }
+        return mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA;
     }
 
     Timestamp now_locked() const {
@@ -330,11 +266,11 @@ struct NetworkManager::Impl {
     NetworkStatus build_status_locked() const {
         NetworkStatus status;
         status.ap_active = ap_active;
-        status.ap_starting = ap_requested && !ap_active;
+        status.ap_starting = ap_desired && !ap_active;
         status.ap_remaining_s = ap_timer.remaining(uptime_now());
         status.ap_ssid = ap_ssid;
         // The password is only exposed while the AP is up (security.md).
-        status.ap_password = (ap_active || ap_requested) ? ap_password : std::string{};
+        status.ap_password = (ap_active || ap_desired) ? ap_password : std::string{};
         status.ap_ip = ap_active ? std::string(kCaptivePortalIp) : std::string{};
         status.sta_connected = sta_connected;
         status.sta_ip = sta_ip;
@@ -352,6 +288,21 @@ struct NetworkManager::Impl {
         return info;
     }
 
+    // Notifications are delivered by the network timer task, never from the
+    // Wi-Fi event task or an HTTP task. The listener may therefore enqueue
+    // work (e.g. stopping the HTTP server) without blocking the Wi-Fi stack.
+    void request_state_notification() {
+        state_notify_pending.store(true);
+        if (timer_task != nullptr) {
+            xTaskNotifyGive(timer_task);
+        }
+    }
+
+    void request_ap_stopped_notification() {
+        ap_stopped_pending.store(true);
+        request_state_notification();
+    }
+
     void emit_state() {
         INetworkListener* callback = nullptr;
         NetworkStatus status;
@@ -362,6 +313,17 @@ struct NetworkManager::Impl {
         }
         if (callback != nullptr) {
             callback->on_network_state_changed(status);
+        }
+    }
+
+    void emit_ap_stopped() {
+        INetworkListener* callback = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            callback = listener;
+        }
+        if (callback != nullptr) {
+            callback->on_ap_stopped();
         }
     }
 
@@ -427,15 +389,20 @@ struct NetworkManager::Impl {
         Timestamp epoch = 0;
         Timestamp last = 0;
         if (nvs_ready && nvs_get_i64(nvs, "time_epoch", epoch) && is_time_sane(epoch)) {
+            uint8_t stored_quality = static_cast<uint8_t>(TimeSource::Unset);
+            nvs_get_u8(nvs, "time_quality", &stored_quality);
+            const std::string stored_source = nvs_get_string(nvs, "time_source");
             time_valid = true;
             base_epoch = epoch;
             base_uptime_us = esp_timer_get_time();
             time_source = TimeSource::Restored;
             trusted = false;
             last_sync = nvs_get_i64(nvs, "time_last_sync", last) ? last : epoch;
-            last_source = "restored";
+            last_source = stored_source.empty() ? "restored" : stored_source;
             persisted_epoch = epoch;
-            ESP_LOGI(kTag, "restored wall clock at %lld", static_cast<long long>(epoch));
+            ESP_LOGI(kTag, "restored wall clock at %lld (last source %s, quality %u)",
+                     static_cast<long long>(epoch), last_source.c_str(),
+                     static_cast<unsigned>(stored_quality));
         } else {
             time_valid = false;
             base_epoch = 0;
@@ -674,7 +641,7 @@ struct NetworkManager::Impl {
         if (err != ESP_OK) {
             return Result<Unit>::fail("sta_config", esp_err_to_name(err));
         }
-        const wifi_mode_t mode = (ap_requested || ap_active) ? WIFI_MODE_APSTA : WIFI_MODE_STA;
+        const wifi_mode_t mode = (ap_desired || ap_active) ? WIFI_MODE_APSTA : WIFI_MODE_STA;
         err = esp_wifi_set_mode(mode);
         if (err != ESP_OK && err != ESP_ERR_WIFI_STATE) {
             return Result<Unit>::fail("sta_mode", esp_err_to_name(err));
@@ -707,7 +674,7 @@ struct NetworkManager::Impl {
         if (!wifi_started) {
             return;
         }
-        if (ap_requested || ap_active) {
+        if (ap_desired || ap_active) {
             esp_wifi_set_mode(WIFI_MODE_AP);
         } else {
             esp_wifi_set_mode(WIFI_MODE_NULL);
@@ -771,6 +738,8 @@ struct NetworkManager::Impl {
 
     void handle_wifi_event(int32_t event_id, void* event_data) {
         bool notify = false;
+        bool ap_stopped = false;
+        bool request_stop = false;
         {
             std::lock_guard<std::mutex> lock(mutex);
             switch (event_id) {
@@ -800,8 +769,18 @@ struct NetworkManager::Impl {
                     break;
                 }
                 case WIFI_EVENT_AP_START:
+                    if (!ap_desired || ap_intent_generation != ap_start_generation) {
+                        // The stop/restart generation changed while AP_START was
+                        // queued. Do not publish a phantom active state; let the
+                        // network task perform the driver stop asynchronously.
+                        ESP_LOGW(kTag, "stale AP start ignored");
+                        ap_stop_pending.store(true);
+                        request_stop = true;
+                        break;
+                    }
                     ap_active = true;
-                    ap_requested = true;
+                    ap_stop_pending_generation = 0;
+                    ap_stop_pending.store(false);
                     if (!ap_timer.active()) {
                         ap_timer.start(uptime_now(), settings.network.ap_window_s);
                     }
@@ -812,9 +791,19 @@ struct NetworkManager::Impl {
                     ESP_LOGI(kTag, "AP started: %s", ap_ssid.c_str());
                     notify = true;
                     break;
-                case WIFI_EVENT_AP_STOP:
+                case WIFI_EVENT_AP_STOP: {
+                    const bool stale_stop = ap_desired && ap_stop_pending_generation != 0 &&
+                                            ap_intent_generation > ap_stop_pending_generation;
+                    if (stale_stop) {
+                        // A newer start superseded this stop; keep the new AP.
+                        ESP_LOGW(kTag, "stale AP stop ignored");
+                        break;
+                    }
+                    const bool was_active = ap_active;
+                    const bool was_desired = ap_desired;
                     ap_active = false;
-                    ap_requested = false;
+                    ap_desired = false;
+                    ap_stop_pending.store(false);
                     ap_timer.stop();
                     stop_dns_locked();
                     disable_napt_locked();
@@ -824,9 +813,16 @@ struct NetworkManager::Impl {
                     if (!sta_connected) {
                         stop_mdns_locked();
                     }
+                    if (was_desired && !was_active) {
+                        ESP_LOGW(kTag, "AP stopped before it became active");
+                    } else if (was_desired) {
+                        ESP_LOGW(kTag, "AP stopped unexpectedly");
+                    }
                     ESP_LOGI(kTag, "AP stopped");
+                    ap_stopped = was_active || was_desired;
                     notify = true;
                     break;
+                }
                 case WIFI_EVENT_AP_STACONNECTED:
                     ESP_LOGI(kTag, "AP client connected");
                     break;
@@ -837,8 +833,16 @@ struct NetworkManager::Impl {
                     break;
             }
         }
-        if (notify) {
-            emit_state();
+        if (request_stop) {
+            request_state_notification();
+        } else if (notify) {
+            if (ap_stopped) {
+                request_ap_stopped_notification();
+            } else {
+                request_state_notification();
+            }
+        } else if (ap_stopped) {
+            request_ap_stopped_notification();
         }
     }
 
@@ -879,7 +883,7 @@ struct NetworkManager::Impl {
             }
         }
         if (notify) {
-            emit_state();
+            request_state_notification();
         }
     }
 
@@ -918,29 +922,47 @@ struct NetworkManager::Impl {
     static void timer_task_main(void* arg) {
         auto* self = static_cast<Impl*>(arg);
         while (self->component_running.load()) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            // Wake every second or immediately when an event requests delivery.
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
             if (!self->component_running.load()) {
                 break;
             }
             bool expired = false;
+            bool retry_stop = false;
+            bool force_stop = false;
+            bool notify = false;
+            bool ap_stopped = false;
             {
                 std::lock_guard<std::mutex> lock(self->mutex);
-                expired = self->ap_timer.tick(uptime_now());
+                const Timestamp now = uptime_now();
+                expired = self->ap_timer.tick(now);
+                force_stop = self->ap_stop_pending.exchange(false);
+                retry_stop = !self->ap_desired && self->ap_active && !self->ap_timer.active();
                 if (self->napt_running) {
                     self->update_upstream_dns_locked();
                 }
-                if (self->time_valid && self->trusted) {
+                // Persist both trusted and restored time so a power loss loses
+                // at most the persistence interval, not the whole uptime.
+                if (self->time_valid) {
                     const Timestamp current = self->now_locked();
                     if (current >= self->persisted_epoch + kTimePersistIntervalS) {
                         self->persist_time_locked(current);
                     }
                 }
+                notify = self->state_notify_pending.exchange(false);
+                ap_stopped = self->ap_stopped_pending.exchange(false);
             }
-            if (expired) {
-                ESP_LOGI(kTag, "AP window expired");
-                if (self->owner != nullptr) {
-                    self->owner->stop_ap();
+            if (notify) {
+                self->emit_state();
+            }
+            if (ap_stopped) {
+                self->emit_ap_stopped();
+            }
+            if ((force_stop || expired || retry_stop) && self->owner != nullptr) {
+                if (expired) {
+                    ESP_LOGI(kTag, "AP window expired");
                 }
+                self->owner->stop_ap();
             }
         }
         self->timer_task_exited.store(true);
@@ -1036,9 +1058,13 @@ NetworkManager::~NetworkManager() {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         impl_->component_running.store(false);
         impl_->dns_requested.store(false);
+        impl_->state_notify_pending.store(false);
+        impl_->ap_stopped_pending.store(false);
+        impl_->ap_stop_pending.store(false);
         impl_->ap_timer.stop();
         impl_->ap_active = false;
-        impl_->ap_requested = false;
+        impl_->ap_desired = false;
+        impl_->listener = nullptr;
         impl_->stop_sntp_locked();
         impl_->stop_mdns_locked();
         impl_->disable_napt_locked();
@@ -1108,6 +1134,10 @@ Result<Unit> NetworkManager::init() {
     }
 
     impl_->hostname = normalize_hostname(impl_->settings.network.hostname);
+    if (!is_valid_hostname(impl_->hostname)) {
+        ESP_LOGW(kTag, "invalid stored hostname; using %s", kDefaultHostname);
+        impl_->hostname = kDefaultHostname;
+    }
     impl_->ap_timer.set_default_window(impl_->settings.network.ap_window_s);
     impl_->open_nvs();
     impl_->load_or_create_ap_credentials_locked();
@@ -1196,8 +1226,12 @@ Result<Unit> NetworkManager::start_ap() {
         if (!impl_->initialized) {
             return Result<Unit>::fail("not_initialized", "network manager not initialized");
         }
-        if (impl_->ap_active || impl_->ap_requested) {
-            impl_->ap_timer.extend(uptime_now(), impl_->settings.network.ap_window_s);
+        if (impl_->ap_desired) {
+            if (impl_->ap_timer.active()) {
+                impl_->ap_timer.extend(uptime_now(), impl_->settings.network.ap_window_s);
+            } else {
+                impl_->ap_timer.start(uptime_now(), impl_->settings.network.ap_window_s);
+            }
         } else {
             if (impl_->ap_ssid.empty() || impl_->ap_password.size() < 8) {
                 impl_->load_or_create_ap_credentials_locked();
@@ -1206,19 +1240,35 @@ Result<Unit> NetworkManager::start_ap() {
             if (!configured) {
                 return configured;
             }
-            impl_->ap_requested = true;
+            ++impl_->ap_intent_generation;
+            impl_->ap_start_generation = impl_->ap_intent_generation;
+            impl_->ap_desired = true;
             impl_->ap_timer.start(uptime_now(), impl_->settings.network.ap_window_s);
             const wifi_mode_t mode = impl_->sta_ready_locked() ? WIFI_MODE_APSTA : WIFI_MODE_AP;
             esp_err_t err = esp_wifi_set_mode(mode);
             if (err != ESP_OK && err != ESP_ERR_WIFI_STATE) {
-                impl_->ap_requested = false;
+                impl_->ap_desired = false;
                 impl_->ap_timer.stop();
+                impl_->ap_stop_pending.store(true);
+                impl_->request_state_notification();
                 return Result<Unit>::fail("ap_mode", esp_err_to_name(err));
             }
             auto started = impl_->ensure_wifi_started_locked();
             if (!started) {
-                impl_->ap_requested = false;
+                impl_->ap_desired = false;
                 impl_->ap_timer.stop();
+                // Do not leave the driver in AP-only mode if the start failed.
+                if (impl_->wifi_started) {
+                    if (impl_->sta_ready_locked()) {
+                        esp_wifi_set_mode(WIFI_MODE_STA);
+                    } else {
+                        esp_wifi_set_mode(WIFI_MODE_NULL);
+                        esp_wifi_stop();
+                        impl_->wifi_started = false;
+                    }
+                }
+                impl_->ap_stop_pending.store(true);
+                impl_->request_state_notification();
                 return started;
             }
             if (impl_->sta_ready_locked()) {
@@ -1230,41 +1280,97 @@ Result<Unit> NetworkManager::start_ap() {
 }
 
 Result<Unit> NetworkManager::stop_ap() {
+    bool request_stop_notification = false;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         if (!impl_->initialized) {
             return Result<Unit>::fail("not_initialized", "network manager not initialized");
         }
-        if (!impl_->ap_requested && !impl_->ap_active) {
+        const bool was_active = impl_->ap_active;
+        if (!impl_->ap_desired && !was_active && !impl_->ap_mode_active_locked()) {
+            // Nothing to stop. Keep the invariant explicit.
             impl_->ap_timer.stop();
+            impl_->ap_stop_pending_generation = 0;
             return Result<Unit>::ok(Unit{});
         }
-        impl_->ap_timer.stop();
-        impl_->ap_requested = false;
+
+        // The desired state changes immediately; only ap_active/timer are kept
+        // truthful until the driver confirms the stop.
+        ++impl_->ap_intent_generation;
+        impl_->ap_stop_pending_generation = impl_->ap_intent_generation;
+        impl_->ap_desired = false;
+        bool stopped = false;
+        esp_err_t last_error = ESP_OK;
+
+        if (impl_->wifi_started) {
+            if (impl_->sta_ready_locked()) {
+                last_error = esp_wifi_set_mode(WIFI_MODE_STA);
+                stopped = last_error == ESP_OK;
+            } else {
+                last_error = esp_wifi_set_mode(WIFI_MODE_NULL);
+                if (last_error == ESP_OK) {
+                    last_error = esp_wifi_stop();
+                    stopped = last_error == ESP_OK || last_error == ESP_ERR_WIFI_STATE;
+                    if (stopped) {
+                        impl_->wifi_started = false;
+                    }
+                }
+            }
+
+            if (!stopped) {
+                ESP_LOGW(kTag, "AP stop via mode failed (%s); forcing Wi-Fi stop",
+                         esp_err_to_name(last_error));
+                const esp_err_t force_error = esp_wifi_stop();
+                if (force_error == ESP_OK || force_error == ESP_ERR_WIFI_STATE) {
+                    impl_->wifi_started = false;
+                    impl_->sta_connected = false;
+                    impl_->sta_ip.clear();
+                    impl_->sta_rssi = 0;
+                    impl_->stop_sntp_locked();
+                    impl_->disable_napt_locked();
+                    impl_->stop_mdns_locked();
+                    // The forced stop also killed the STA; try to bring the
+                    // uplink back so a failed AP stop does not leave us offline.
+                    if (impl_->sta_configured_locked()) {
+                        impl_->ap_active = false;
+                        auto rearm = impl_->apply_sta_locked();
+                        if (!rearm) {
+                            ESP_LOGW(kTag, "STA re-arm after forced stop failed: %s",
+                                     rearm.error ? rearm.error->message.c_str() : "unknown");
+                        }
+                    }
+                    stopped = true;
+                } else {
+                    ESP_LOGE(kTag, "forced Wi-Fi stop failed (%s)", esp_err_to_name(force_error));
+                }
+            }
+        } else {
+            stopped = true;
+        }
+
+        if (!stopped) {
+            // Keep the AP state truthful and schedule a short retry. The timer
+            // task will call stop_ap() again when it expires.
+            impl_->ap_timer.start(uptime_now(), 5);
+            impl_->request_state_notification();
+            return Result<Unit>::fail("ap_stop_failed", "could not confirm AP stop");
+        }
+
         impl_->ap_active = false;
+        impl_->ap_timer.stop();
+        impl_->ap_stop_pending.store(false);
         impl_->stop_dns_locked();
         impl_->disable_napt_locked();
         if (impl_->ap_netif != nullptr) {
             esp_netif_dhcps_stop(impl_->ap_netif);
         }
-        esp_err_t err = ESP_OK;
-        if (impl_->wifi_started) {
-            if (impl_->sta_ready_locked()) {
-                err = esp_wifi_set_mode(WIFI_MODE_STA);
-            } else {
-                err = esp_wifi_set_mode(WIFI_MODE_NULL);
-                if (err == ESP_OK || err == ESP_ERR_WIFI_STATE) {
-                    err = esp_wifi_stop();
-                    impl_->wifi_started = false;
-                }
-            }
-        }
         if (!impl_->sta_connected) {
             impl_->stop_mdns_locked();
         }
-        if (err != ESP_OK && err != ESP_ERR_WIFI_STATE) {
-            return Result<Unit>::fail("ap_stop", esp_err_to_name(err));
-        }
+        request_stop_notification = was_active;
+    }
+    if (request_stop_notification) {
+        impl_->request_ap_stopped_notification();
     }
     return Result<Unit>::ok(Unit{});
 }
@@ -1274,7 +1380,7 @@ Result<Unit> NetworkManager::extend_ap(int seconds) {
     if (!impl_->initialized) {
         return Result<Unit>::fail("not_initialized", "network manager not initialized");
     }
-    if (!impl_->ap_active && !impl_->ap_requested) {
+    if (!impl_->ap_desired) {
         return Result<Unit>::fail("ap_inactive", "AP is not active");
     }
     if (seconds <= 0) {
@@ -1316,14 +1422,24 @@ Result<Unit> NetworkManager::apply_settings(const NetworkSettings& settings) {
         if (settings.ap_window_s < 0) {
             return Result<Unit>::fail("invalid_window", "AP window must not be negative");
         }
+        const std::string normalized_hostname = normalize_hostname(settings.hostname);
+        if (!is_valid_hostname(normalized_hostname)) {
+            return Result<Unit>::fail("invalid_hostname",
+                                      "hostname must be 1..32 letters, digits or hyphens");
+        }
         if (settings.sta_enabled) {
             if (settings.sta_ssid.empty()) {
                 return Result<Unit>::fail("invalid_sta_ssid", "STA SSID is required");
+            }
+            if (settings.sta_ssid.size() > 32) {
+                return Result<Unit>::fail("invalid_sta_ssid", "STA SSID must be 1..32 bytes");
             }
             if (settings.sta_password.size() < 8 || settings.sta_password.size() > 63) {
                 return Result<Unit>::fail("invalid_sta_password",
                                           "STA password must be 8..63 bytes");
             }
+        } else if (settings.sta_ssid.size() > 32) {
+            return Result<Unit>::fail("invalid_sta_ssid", "STA SSID must be 1..32 bytes");
         }
 
         bool credentials_changed = false;
@@ -1340,9 +1456,8 @@ Result<Unit> NetworkManager::apply_settings(const NetworkSettings& settings) {
         }
 
         impl_->settings.network = settings;
-        const std::string new_hostname = normalize_hostname(settings.hostname);
-        const bool hostname_changed = new_hostname != impl_->hostname;
-        impl_->hostname = new_hostname;
+        const bool hostname_changed = normalized_hostname != impl_->hostname;
+        impl_->hostname = normalized_hostname;
         if (impl_->ap_netif != nullptr) {
             esp_netif_set_hostname(impl_->ap_netif, impl_->hostname.c_str());
         }
@@ -1351,7 +1466,7 @@ Result<Unit> NetworkManager::apply_settings(const NetworkSettings& settings) {
         }
         impl_->ap_timer.set_default_window(settings.ap_window_s);
 
-        restart_ap = credentials_changed && (impl_->ap_active || impl_->ap_requested);
+        restart_ap = credentials_changed && impl_->ap_desired;
         if (settings.sta_enabled) {
             auto result = impl_->apply_sta_locked();
             if (!result) {
@@ -1391,12 +1506,75 @@ Result<Unit> NetworkManager::apply_time_settings(const TimeSettings& settings) {
     if (!impl_->initialized) {
         return Result<Unit>::fail("not_initialized", "network manager not initialized");
     }
-    const bool was_started = impl_->sntp_started;
     impl_->settings.time = settings;
     impl_->apply_timezone_locked();
-    if (was_started) {
-        impl_->stop_sntp_locked();
-        impl_->start_sntp_locked();
+    // Re-evaluate from scratch: enabling SNTP at runtime must start it even if
+    // it was not running before, and disabling it must stop it.
+    impl_->stop_sntp_locked();
+    impl_->start_sntp_locked();
+    return Result<Unit>::ok(Unit{});
+}
+
+Result<Unit> NetworkManager::factory_reset_credentials() {
+    // Best effort: an AP that refuses to stop must not prevent clearing
+    // credentials; the caller usually reboots after a factory reset anyway.
+    auto stop_result = stop_ap();
+    if (!stop_result) {
+        ESP_LOGW(kTag, "AP stop failed during credential reset; continuing");
+    }
+
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    if (!impl_->initialized) {
+        return Result<Unit>::fail("not_initialized", "network manager not initialized");
+    }
+
+    bool erased = false;
+    if (impl_->nvs_ready) {
+        const esp_err_t err = nvs_erase_all(impl_->nvs);
+        if (err == ESP_OK) {
+            erased = nvs_commit(impl_->nvs) == ESP_OK;
+        }
+        if (!erased) {
+            ESP_LOGW(kTag, "failed to erase %s NVS namespace", kNvsNamespace);
+        }
+    }
+
+    impl_->settings.network = NetworkSettings{};
+    impl_->settings.time = TimeSettings{};
+    impl_->hostname = kDefaultHostname;
+    impl_->ap_ssid.clear();
+    impl_->ap_password.clear();
+    impl_->load_or_create_ap_credentials_locked();
+
+    if (impl_->ap_mode_active_locked()) {
+        esp_wifi_stop();
+        impl_->wifi_started = false;
+    }
+
+    impl_->time_valid = false;
+    impl_->time_source = TimeSource::Unset;
+    impl_->trusted = false;
+    impl_->last_sync = 0;
+    impl_->last_source = "unset";
+    impl_->base_epoch = 0;
+    impl_->base_uptime_us = 0;
+    impl_->persisted_epoch = 0;
+
+    impl_->ap_active = false;
+    impl_->ap_desired = false;
+    impl_->ap_timer.stop();
+    impl_->stop_dns_locked();
+    impl_->disable_napt_locked();
+    impl_->stop_mdns_locked();
+    impl_->ap_intent_generation = 0;
+    impl_->ap_start_generation = 0;
+    impl_->ap_stop_pending_generation = 0;
+    impl_->ap_stop_pending.store(false);
+    impl_->disable_sta_locked();
+    impl_->apply_timezone_locked();
+
+    if (!erased) {
+        return Result<Unit>::fail("nvs_unavailable", "could not erase persistent network state");
     }
     return Result<Unit>::ok(Unit{});
 }
@@ -1406,14 +1584,12 @@ uint64_t NetworkManager::uptime_seconds() const {
 }
 
 void NetworkManager::set_listener(INetworkListener* listener) {
-    bool initialized = false;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         impl_->listener = listener;
-        initialized = impl_->initialized;
     }
-    if (listener != nullptr && initialized) {
-        impl_->emit_state();
+    if (listener != nullptr) {
+        impl_->request_state_notification();
     }
 }
 
@@ -1429,7 +1605,7 @@ std::string NetworkManager::ap_ssid() const {
 
 std::string NetworkManager::ap_password() const {
     std::lock_guard<std::mutex> lock(impl_->mutex);
-    return (impl_->ap_active || impl_->ap_requested) ? impl_->ap_password : std::string{};
+    return (impl_->ap_active || impl_->ap_desired) ? impl_->ap_password : std::string{};
 }
 
 std::string NetworkManager::ap_url() const {
@@ -1446,7 +1622,7 @@ std::string NetworkManager::sta_url() const {
 
 std::string NetworkManager::wifi_qr_payload() const {
     std::lock_guard<std::mutex> lock(impl_->mutex);
-    if (!impl_->ap_active && !impl_->ap_requested) {
+    if (!impl_->ap_active && !impl_->ap_desired) {
         return {};
     }
     return kaffee::wifi_qr_payload(impl_->ap_ssid, impl_->ap_password);

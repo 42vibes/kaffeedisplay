@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <limits>
 
 namespace kaffee {
@@ -189,6 +190,107 @@ int berlin_utc_offset_seconds(int64_t epoch_seconds) {
     const int64_t start = last_sunday_of_month(year, 3) * 86400 + 3600;
     const int64_t end = last_sunday_of_month(year, 10) * 86400 + 3600;
     return (epoch_seconds >= start && epoch_seconds < end) ? 7200 : 3600;
+}
+
+bool build_dns_response(const uint8_t* query, size_t query_length, uint8_t* response,
+                        size_t capacity, size_t& response_length) {
+    if (query == nullptr || response == nullptr || query_length < 12 || capacity < 12) {
+        return false;
+    }
+    if ((query[2] & 0x80) != 0) {  // ignore responses
+        return false;
+    }
+    if ((query[2] & 0x78) != 0) {  // only standard queries
+        return false;
+    }
+    const uint16_t question_count = static_cast<uint16_t>((query[4] << 8) | query[5]);
+    if (question_count != 1) {
+        return false;
+    }
+
+    size_t offset = 12;
+    bool terminated = false;
+    while (offset < query_length) {
+        const uint8_t label_length = query[offset];
+        if (label_length == 0) {
+            ++offset;
+            terminated = true;
+            break;
+        }
+        if ((label_length & 0xC0) != 0) {  // compression is not valid in a question
+            return false;
+        }
+        offset += 1 + label_length;
+        if (offset > query_length) {
+            return false;
+        }
+    }
+    if (!terminated || offset + 4 > query_length) {
+        return false;
+    }
+
+    const uint16_t qtype = static_cast<uint16_t>((query[offset] << 8) | query[offset + 1]);
+    const uint16_t qclass = static_cast<uint16_t>((query[offset + 2] << 8) | query[offset + 3]);
+    const bool is_a = qtype == 1 && qclass == 1;
+    const bool is_aaaa = qtype == 28 && qclass == 1;
+    const size_t question_length = offset + 4 - 12;
+    const size_t answer_length = is_a ? 16 : 0;
+    const size_t total = 12 + question_length + answer_length;
+    if (total > capacity) {
+        return false;
+    }
+
+    std::memset(response, 0, total);
+    std::memcpy(response, query, 12);
+    // QR + AA + copied RD; RA set; NOERROR or NXDOMAIN.
+    response[2] = static_cast<uint8_t>(0x84 | (query[2] & 0x01));
+    response[3] = (is_a || is_aaaa) ? 0x80 : 0x83;
+    response[4] = 0;
+    response[5] = 1;
+    response[6] = 0;
+    response[7] = is_a ? 1 : 0;
+    std::memcpy(response + 12, query + 12, question_length);
+
+    if (is_a) {
+        uint8_t* answer = response + 12 + question_length;
+        answer[0] = 0xC0;
+        answer[1] = 0x0C;  // pointer to the question name
+        answer[2] = 0;
+        answer[3] = 1;  // TYPE A
+        answer[4] = 0;
+        answer[5] = 1;  // CLASS IN
+        answer[6] = 0;
+        answer[7] = 0;
+        answer[8] = 0;
+        answer[9] = 60;  // TTL
+        answer[10] = 0;
+        answer[11] = 4;
+        answer[12] = 192;
+        answer[13] = 168;
+        answer[14] = 4;
+        answer[15] = 1;
+    }
+
+    response_length = total;
+    return true;
+}
+
+bool is_valid_hostname(std::string_view hostname) {
+    if (hostname.empty() || hostname.size() > 32) {
+        return false;
+    }
+    if (hostname.front() == '-' || hostname.back() == '-') {
+        return false;
+    }
+    for (char c : hostname) {
+        const bool digit = c >= '0' && c <= '9';
+        const bool upper = c >= 'A' && c <= 'Z';
+        const bool lower = c >= 'a' && c <= 'z';
+        if (!digit && !upper && !lower && c != '-') {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace kaffee
