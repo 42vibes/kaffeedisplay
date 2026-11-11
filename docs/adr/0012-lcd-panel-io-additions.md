@@ -1,4 +1,4 @@
-# ADR 0011 — Use esp_lcd_panel_io_additions for the ST7701 init bus
+# ADR 0012 — Use esp_lcd_panel_io_additions for the ST7701 init bus
 
 Status: accepted (2026-11-11)
 

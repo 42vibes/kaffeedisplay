@@ -61,6 +61,10 @@ class EspDisplay final : public IDisplay {
     BoardStats stats() const;
     bool touch_available() const;
 
+    // Keeps the panel awake while an AP/QR session is active. The UI/net layer
+    // should call this with true when the AP starts and false when it stops.
+    void set_stay_awake(bool stay_awake);
+
     lv_display_t* lv_display() const {
         return lv_display_;
     }
@@ -127,6 +131,7 @@ class EspDisplay final : public IDisplay {
 
     mutable SemaphoreHandle_t state_mutex_ = nullptr;
     SemaphoreHandle_t backlight_mutex_ = nullptr;
+    SemaphoreHandle_t activity_mutex_ = nullptr;
     mutable portMUX_TYPE touch_lock_ = portMUX_INITIALIZER_UNLOCKED;
     TouchSample touch_sample_{};
 
@@ -140,7 +145,9 @@ class EspDisplay final : public IDisplay {
     std::atomic<bool> lvgl_ready_{false};
     std::atomic<bool> touch_present_{false};
     std::atomic<bool> running_{false};
-    std::atomic<uint32_t> last_activity_ms_{0};
+    bool stay_awake_ = false;
+    std::atomic<int> task_count_{0};
+    uint32_t last_activity_ms_ = 0;
 
     TaskHandle_t touch_task_ = nullptr;
     TaskHandle_t power_task_ = nullptr;

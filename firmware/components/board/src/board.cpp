@@ -1,5 +1,6 @@
 #include "kaffee/board_esp.hpp"
 
+#include <inttypes.h>
 #include <cmath>
 #include <cstring>
 #include <memory>
@@ -29,7 +30,20 @@ namespace kaffee {
 namespace {
 
 constexpr const char* kTag = "board";
-constexpr uint32_t kLedcMaxDuty = (1U << 12) - 1;  // 12-bit
+
+// The LEDC divider must be >= 1. On the ESP32-S3 APB clock (80 MHz),
+// 20 kHz * 2^12 = 81.92 MHz exceeds the clock, so 19 kHz is the closest
+// 12-bit setting that is actually reachable.
+constexpr uint32_t kLedcFreqHz = 19000;
+constexpr uint32_t kLedcResolutionBits = 12;
+constexpr uint32_t kLedcMaxDuty = (1U << kLedcResolutionBits) - 1;
+constexpr uint32_t kMinBacklightDuty = 32;  // keeps 1 % visibly on
+
+static_assert(80000000ULL >= kLedcFreqHz * (1ULL << kLedcResolutionBits),
+              "LEDC frequency at 12-bit must fit the 80 MHz source clock");
+static_assert(80000000ULL < 20000ULL * (1ULL << kLedcResolutionBits),
+              "20 kHz at 12-bit must not be used on the ESP32-S3");
+
 constexpr int kBacklightTimer = LEDC_TIMER_0;
 constexpr int kBacklightChannel = LEDC_CHANNEL_0;
 
@@ -69,7 +83,9 @@ Result<std::unique_ptr<EspDisplay>> EspDisplay::create() {
     auto display = std::unique_ptr<EspDisplay>(new EspDisplay());
     display->state_mutex_ = xSemaphoreCreateMutex();
     display->backlight_mutex_ = xSemaphoreCreateMutex();
-    if (display->state_mutex_ == nullptr || display->backlight_mutex_ == nullptr) {
+    display->activity_mutex_ = xSemaphoreCreateMutex();
+    if (display->state_mutex_ == nullptr || display->backlight_mutex_ == nullptr ||
+        display->activity_mutex_ == nullptr) {
         return Result<std::unique_ptr<EspDisplay>>::fail("board/no_mem",
                                                          "cannot allocate display mutexes");
     }
@@ -131,17 +147,19 @@ EspDisplay::~EspDisplay() {
         vSemaphoreDelete(backlight_mutex_);
         backlight_mutex_ = nullptr;
     }
+    if (activity_mutex_ != nullptr) {
+        vSemaphoreDelete(activity_mutex_);
+        activity_mutex_ = nullptr;
+    }
 }
 
 Result<Unit> EspDisplay::init() {
     if (panel_ != nullptr) {
         return Result<Unit>::ok(Unit{});
     }
-    if (state_mutex_ == nullptr || backlight_mutex_ == nullptr) {
+    if (state_mutex_ == nullptr || backlight_mutex_ == nullptr || activity_mutex_ == nullptr) {
         return Result<Unit>::fail("board/not_created", "display mutexes are missing");
     }
-
-    settings_ = DisplaySettings{};
 
     Result<Unit> result = init_backlight();
     if (!result) {
@@ -159,10 +177,10 @@ Result<Unit> EspDisplay::init() {
     }
     init_temperature_sensor();
 
-    last_activity_ms_.store(now_ms());
+    last_activity_ms_ = now_ms();
     power_state_.store(static_cast<int>(PowerState::Off));
-    start_tasks();
     set_power_state(PowerState::Active, true);
+    start_tasks();
 
     ESP_LOGI(kTag, "board ready: %dx%d, rotation %d, active %d%%, idle %d%%", kWidth, kHeight,
              settings_.rotation, settings_.brightness_active, settings_.brightness_idle);
@@ -174,13 +192,28 @@ Result<Unit> EspDisplay::init_backlight() {
     timer.speed_mode = LEDC_LOW_SPEED_MODE;
     timer.duty_resolution = LEDC_TIMER_12_BIT;
     timer.timer_num = static_cast<ledc_timer_t>(kBacklightTimer);
-    timer.freq_hz = 20000;
+    timer.freq_hz = kLedcFreqHz;
     timer.clk_cfg = LEDC_AUTO_CLK;
     esp_err_t err = ledc_timer_config(&timer);
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "LEDC timer init failed: %s", esp_err_to_name(err));
         return Result<Unit>::fail("board/backlight", "LEDC timer configuration failed");
     }
+
+    // Boot-time verification: a divider below 1 (the 20 kHz/12-bit case) is
+    // rejected by the driver or silently misconfigured, so read it back.
+    const uint32_t configured_hz =
+        ledc_get_freq(LEDC_LOW_SPEED_MODE, static_cast<ledc_timer_t>(kBacklightTimer));
+    const uint32_t tolerance = kLedcFreqHz / 20;  // 5 %
+    if (configured_hz == 0 || configured_hz < kLedcFreqHz - tolerance ||
+        configured_hz > kLedcFreqHz + tolerance) {
+        ESP_LOGE(kTag, "LEDC frequency check failed: requested %" PRIu32 " Hz, got %" PRIu32 " Hz",
+                 kLedcFreqHz, configured_hz);
+        return Result<Unit>::fail("board/backlight",
+                                  "LEDC timer cannot produce the requested frequency");
+    }
+    ESP_LOGI(kTag, "backlight PWM: %" PRIu32 " Hz, %" PRIu32 "-bit, max duty %" PRIu32,
+             configured_hz, kLedcResolutionBits, kLedcMaxDuty);
 
     ledc_channel_config_t channel = {};
     channel.gpio_num = board::kPinBacklight;
@@ -246,7 +279,11 @@ Result<Unit> EspDisplay::init_panel() {
     rgb_config.clk_src = LCD_CLK_SRC_DEFAULT;
     rgb_config.data_width = 16;
     rgb_config.bits_per_pixel = 16;
-    rgb_config.num_fbs = 2;  // two PSRAM frame buffers, switched on vsync
+    // Single scanout framebuffer. esp_lvgl_port 2.9.0 can use the two RGB
+    // framebuffers for tear-free drawing only with avoid_tearing, but its
+    // remove_disp path frees those pointers, so software rotation uses one
+    // PSRAM FB plus two LVGL draw buffers instead.
+    rgb_config.num_fbs = 1;
     rgb_config.de_gpio_num = board::kPinLcdDe;
     rgb_config.pclk_gpio_num = board::kPinLcdPclk;
     rgb_config.vsync_gpio_num = board::kPinLcdVsync;
@@ -308,19 +345,18 @@ Result<Unit> EspDisplay::init_panel() {
         ESP_LOGW(kTag, "ST7701 display-on skipped: %s", esp_err_to_name(err));
     }
 
-    // Clear both PSRAM frame buffers before the backlight comes on, otherwise
+    // Clear the PSRAM frame buffer before the backlight comes on, otherwise
     // power-on RAM content can flash on the panel.
     void* fb0 = nullptr;
-    void* fb1 = nullptr;
-    if (esp_lcd_rgb_panel_get_frame_buffer(panel_, 2, &fb0, &fb1) == ESP_OK) {
+    if (esp_lcd_rgb_panel_get_frame_buffer(panel_, 1, &fb0) == ESP_OK) {
         const size_t frame_bytes = static_cast<size_t>(kWidth) * kHeight * sizeof(uint16_t);
         std::memset(fb0, 0, frame_bytes);
-        std::memset(fb1, 0, frame_bytes);
     } else {
-        ESP_LOGW(kTag, "could not access RGB frame buffers for clearing");
+        ESP_LOGW(kTag, "could not access RGB frame buffer for clearing");
     }
 
-    ESP_LOGI(kTag, "ST7701S RGB panel initialized (%dx%d, type-9, 2 PSRAM FBs)", kWidth, kHeight);
+    ESP_LOGI(kTag, "ST7701S RGB panel initialized (%dx%d, type-9, single frame buffer)", kWidth,
+             kHeight);
     return Result<Unit>::ok(Unit{});
 }
 
@@ -446,17 +482,25 @@ void EspDisplay::start_tasks() {
     if (running_.exchange(true)) {
         return;
     }
+    task_count_.store(0);
     BaseType_t ok = xTaskCreatePinnedToCore(&EspDisplay::touch_task_entry, "board_touch", 4096,
                                             this, 4, &touch_task_, tskNO_AFFINITY);
-    if (ok != pdPASS) {
+    if (ok == pdPASS) {
+        task_count_.fetch_add(1);
+    } else {
         ESP_LOGE(kTag, "failed to create touch task");
         touch_task_ = nullptr;
     }
     ok = xTaskCreatePinnedToCore(&EspDisplay::power_task_entry, "board_power", 3072, this, 3,
                                  &power_task_, tskNO_AFFINITY);
-    if (ok != pdPASS) {
+    if (ok == pdPASS) {
+        task_count_.fetch_add(1);
+    } else {
         ESP_LOGE(kTag, "failed to create power task");
         power_task_ = nullptr;
+    }
+    if (task_count_.load() == 0) {
+        running_.store(false);
     }
 }
 
@@ -464,8 +508,20 @@ void EspDisplay::stop_tasks() {
     if (!running_.exchange(false)) {
         return;
     }
-    // Both loops notice running_ and delete themselves at their next tick.
-    vTaskDelay(pdMS_TO_TICKS(kPowerTickMs + kTouchPollMs * 2));
+    // Both loops notice running_ and remove themselves. Wait for the counter
+    // instead of assuming a fixed worst-case delay.
+    for (int waited_ms = 0; waited_ms < 1000 && task_count_.load() > 0; waited_ms += 10) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    if (task_count_.load() > 0) {
+        ESP_LOGW(kTag, "tasks did not stop in time; forcing deletion");
+        if (touch_task_ != nullptr) {
+            vTaskDelete(touch_task_);
+        }
+        if (power_task_ != nullptr) {
+            vTaskDelete(power_task_);
+        }
+    }
     touch_task_ = nullptr;
     power_task_ = nullptr;
 }
@@ -529,19 +585,32 @@ void EspDisplay::touch_loop() {
 
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(kTouchPollMs));
     }
+    task_count_.fetch_sub(1);
     vTaskDelete(nullptr);
 }
 
 void EspDisplay::power_loop() {
     while (running_.load()) {
-        vTaskDelay(pdMS_TO_TICKS(kPowerTickMs));
+        // Sleep in short slices so shutdown is bounded even though the state
+        // machine only needs a 200 ms tick.
+        for (int slept = 0; slept < kPowerTickMs && running_.load(); slept += 20) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        if (!running_.load()) {
+            break;
+        }
 
+        if (activity_mutex_ != nullptr) {
+            xSemaphoreTake(activity_mutex_, portMAX_DELAY);
+        }
         const DisplaySettings current = snapshot_settings();
-        const uint32_t elapsed_ms = now_ms() - last_activity_ms_.load();
+        const uint32_t elapsed_ms = now_ms() - last_activity_ms_;
         PowerState desired = PowerState::Active;
 
-        if (current.screen_off_timeout_s > 0 &&
-            elapsed_ms >= static_cast<uint32_t>(current.screen_off_timeout_s) * 1000U) {
+        if (stay_awake_) {
+            desired = PowerState::Active;
+        } else if (current.screen_off_timeout_s > 0 &&
+                   elapsed_ms >= static_cast<uint32_t>(current.screen_off_timeout_s) * 1000U) {
             desired = PowerState::Off;
         } else if (current.dim_timeout_s > 0 &&
                    elapsed_ms >= static_cast<uint32_t>(current.dim_timeout_s) * 1000U) {
@@ -551,7 +620,11 @@ void EspDisplay::power_loop() {
         if (static_cast<PowerState>(power_state_.load()) != desired) {
             set_power_state(desired, true);
         }
+        if (activity_mutex_ != nullptr) {
+            xSemaphoreGive(activity_mutex_);
+        }
     }
+    task_count_.fetch_sub(1);
     vTaskDelete(nullptr);
 }
 
@@ -595,10 +668,32 @@ DisplaySettings EspDisplay::snapshot_settings() const {
 }
 
 void EspDisplay::note_activity() {
-    last_activity_ms_.store(now_ms());
+    if (activity_mutex_ != nullptr) {
+        xSemaphoreTake(activity_mutex_, portMAX_DELAY);
+    }
+    last_activity_ms_ = now_ms();
     if (static_cast<PowerState>(power_state_.load()) != PowerState::Active) {
         set_power_state(PowerState::Active, true);
     }
+    if (activity_mutex_ != nullptr) {
+        xSemaphoreGive(activity_mutex_);
+    }
+}
+
+void EspDisplay::set_stay_awake(bool stay_awake) {
+    if (activity_mutex_ != nullptr) {
+        xSemaphoreTake(activity_mutex_, portMAX_DELAY);
+    }
+    stay_awake_ = stay_awake;
+    // Enable/disable restarts the idle window instead of immediately dimming.
+    last_activity_ms_ = now_ms();
+    if (stay_awake) {
+        set_power_state(PowerState::Active, true);
+    }
+    if (activity_mutex_ != nullptr) {
+        xSemaphoreGive(activity_mutex_);
+    }
+    ESP_LOGI(kTag, "stay-awake %s", stay_awake ? "enabled" : "disabled");
 }
 
 void EspDisplay::set_power_state(PowerState state, bool fade) {
@@ -666,16 +761,30 @@ void EspDisplay::apply_backlight(int percent, bool fade) {
 
 uint32_t EspDisplay::percent_to_duty(int percent) const {
     percent = clamp_int(percent, 0, 100);
-    if (!s_gamma_ready) {
-        return static_cast<uint32_t>(percent) * kLedcMaxDuty / 100U;
+    if (percent == 0) {
+        return 0;
     }
-    return s_gamma_lut[percent];
+    uint32_t duty = 0;
+    if (!s_gamma_ready) {
+        duty = static_cast<uint32_t>(percent) * kLedcMaxDuty / 100U;
+    } else {
+        duty = s_gamma_lut[percent];
+    }
+    // Gamma 2.2 maps 1 % to <1 duty count. Keep any non-zero setting visibly
+    // on instead of turning the panel black at the lowest brightness step.
+    return duty < kMinBacklightDuty ? kMinBacklightDuty : duty;
 }
 
 void EspDisplay::set_backlight_percent(int percent, bool fade) {
     percent = clamp_int(percent, 0, 100);
+    if (activity_mutex_ != nullptr) {
+        xSemaphoreTake(activity_mutex_, portMAX_DELAY);
+    }
     apply_backlight(percent, fade);
     power_state_.store(static_cast<int>(percent > 0 ? PowerState::Active : PowerState::Off));
+    if (activity_mutex_ != nullptr) {
+        xSemaphoreGive(activity_mutex_);
+    }
 }
 
 void EspDisplay::wake() {
@@ -786,6 +895,8 @@ Result<Unit> EspDisplay::init_lvgl() {
     lvgl_port_display_cfg_t display_config = {};
     display_config.panel_handle = panel_;
     display_config.buffer_size = static_cast<uint32_t>(kWidth) * 120U;  // quarter screen
+    // Two LVGL draw buffers (software double-buffered rendering); scanout is a
+    // single RGB framebuffer, so this is not tear-free scanout double buffering.
     display_config.double_buffer = true;
     display_config.hres = kWidth;
     display_config.vres = kHeight;

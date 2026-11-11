@@ -38,6 +38,22 @@ constexpr Point transform(int32_t raw_x, int32_t raw_y, int32_t width, int32_t h
     }
 }
 
+// Inverts the mapping: logical LVGL coordinates back to raw panel coordinates.
+// Used by tests and by any code that has to place panel-space markers.
+constexpr Point inverse(Point logical, int32_t width, int32_t height, int rotation) {
+    switch (rotation) {
+        case 90:
+            return {logical.y, height - 1 - logical.x};
+        case 180:
+            return {width - 1 - logical.x, height - 1 - logical.y};
+        case 270:
+            return {width - 1 - logical.y, logical.x};
+        case 0:
+        default:
+            return {logical.x, logical.y};
+    }
+}
+
 // Clamps a point to the drawable area. GT911 occasionally reports coordinates
 // one pixel outside the panel at the edges.
 constexpr Point clamp(Point p, int32_t width, int32_t height) {

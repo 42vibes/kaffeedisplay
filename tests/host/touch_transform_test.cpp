@@ -36,11 +36,25 @@ TEST_CASE("touch transform is reversible for every rotation") {
     for (int rotation : {0, 90, 180, 270}) {
         for (int y = 0; y < 480; y += 37) {
             for (int x = 0; x < 480; x += 41) {
+                const Point raw{x, y};
                 const Point logical = transform(x, y, 480, 480, rotation);
+                CHECK(kaffee::touch::inverse(logical, 480, 480, rotation) == raw);
                 CHECK(logical.x >= 0);
                 CHECK(logical.x < 480);
                 CHECK(logical.y >= 0);
                 CHECK(logical.y < 480);
+            }
+        }
+    }
+}
+
+TEST_CASE("touch transform inverse also round-trips logical points") {
+    for (int rotation : {0, 90, 180, 270}) {
+        for (int y = 0; y < 480; y += 53) {
+            for (int x = 0; x < 480; x += 47) {
+                const Point logical{x, y};
+                const Point raw = kaffee::touch::inverse(logical, 480, 480, rotation);
+                CHECK(transform(raw.x, raw.y, 480, 480, rotation) == logical);
             }
         }
     }
