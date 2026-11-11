@@ -47,10 +47,6 @@ void UiAppImpl::build_page_stats(lv_obj_t* tile) {
     theme::set_wrapped(stats_warning_);
     lv_obj_set_hidden(stats_warning_, true);
 
-    lv_obj_t* hint = theme::make_label(stats_body_, strings::STATS_NO_MONEY, theme::font_small(),
-                                       theme::color(theme::COLOR_DIM));
-    (void)hint;
-
     stats_list_ = lv_obj_create(stats_body_);
     theme::make_transparent(stats_list_);
     lv_obj_set_width(stats_list_, lv_pct(100));

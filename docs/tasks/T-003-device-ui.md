@@ -50,4 +50,6 @@ Interface: `firmware/components/board/include/kaffee/board.hpp` and
 
 - LVGL 9.6 device UI (3 pages, German, espresso theme) in `firmware/components/ui/`.
 - Host simulator screenshots in `docs/ui/screenshots/`.
+- Boot verification on hardware is pending T-009 main integration (`UiApp::create`,
+  `BoardDisplayPort`, service/platform construction).
 - PR: https://github.com/Babo96/kaffeedisplay/pull/8

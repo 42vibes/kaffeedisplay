@@ -38,6 +38,10 @@ show the actual device UI.
 
 ## Evidence
 
-- `make sim` / `make screenshots` with LVGL 9.6 + SDL2.
+- `make sim` (interactive) and `make screenshots` (deterministic) with LVGL 9.6 + SDL2.
+- `make test-ui` real click/hit-test smoke test; CI regenerates screenshots and
+  compares pixels.
 - Real screenshots committed under `docs/ui/screenshots/` and embedded in `README.md`.
+- Device boot verification is pending T-009 integration; the simulator is the
+  current evidence path.
 - PR: https://github.com/Babo96/kaffeedisplay/pull/8

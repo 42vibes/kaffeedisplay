@@ -36,7 +36,9 @@ make test         # host unit tests + web unit tests
 make web          # build the admin SPA
 make build        # build firmware (requires ESP-IDF 5.x or Docker)
 make flash        # flash /dev/ttyUSB0
-make sim          # LVGL simulator on the host
+make sim          # LVGL simulator on the host (interactive)
+make screenshots  # regenerate the committed device screenshots
+make test-ui      # LVGL click/hit-test smoke test
 make check        # everything CI runs
 ```
 

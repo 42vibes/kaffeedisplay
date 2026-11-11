@@ -1,12 +1,15 @@
+#include <clocale>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <SDL2/SDL.h>
 
+#include "click_test.hpp"
 #include "fake_backend.hpp"
 #include "kaffee/ui.hpp"
 #include "kaffee/ui_control.hpp"
@@ -19,6 +22,7 @@ struct Options {
     int page = 1;
     int rotation = 0;
     std::string state = "idle";
+    bool click_test = false;
     bool help = false;
 };
 
@@ -33,7 +37,8 @@ uint32_t tick_cb() {
 void print_usage(const char* argv0) {
     std::printf(
         "Usage: %s [--page 1|2|3] [--rotation 0|90|180|270]\n"
-        "          [--screenshot FILE [--state idle|selected|toast|ap]]\n\n"
+        "          [--screenshot FILE [--state idle|selected|toast|ap]]\n"
+        "          [--click-test]\n\n"
         "Mouse = touch. Keys: 1/2/3 pages, r rotation, +/- brightness, q quit.\n",
         argv0);
 }
@@ -60,6 +65,8 @@ bool parse_options(int argc, char** argv, Options* options) {
             options->rotation = std::atoi(value.c_str());
         } else if (arg == "--state") {
             if (!next(&options->state)) return false;
+        } else if (arg == "--click-test") {
+            options->click_test = true;
         } else {
             std::fprintf(stderr, "Unknown argument: %s\n", arg.c_str());
             return false;
@@ -90,10 +97,14 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    const bool screenshot_mode = !options.screenshot.empty();
+    const bool screenshot_mode = !options.screenshot.empty() || options.click_test;
     if (screenshot_mode) {
         g_use_fixed_tick = true;
-        // Keep screenshots independent of the host display server.
+        // Keep screenshots independent of the host timezone, locale and display
+        // server. The UI renders Europe/Berlin time.
+        setenv("TZ", "Europe/Berlin", 1);
+        tzset();
+        std::setlocale(LC_ALL, "C");
         SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
         SDL_setenv("SDL_RENDER_DRIVER", "software", 1);
     }
@@ -108,6 +119,7 @@ int main(int argc, char** argv) {
     }
     if (options.rotation != 0) display.set_rotation(options.rotation);
     lv_tick_set_cb(tick_cb);
+    kaffee::ui::attach_display_port(&display);
 
     sim::FakeBackend backend;
     backend.set_rotation(options.rotation);
@@ -125,6 +137,12 @@ int main(int argc, char** argv) {
     if (control == nullptr) {
         std::fprintf(stderr, "UI does not expose the simulator control surface\n");
         return 1;
+    }
+
+    if (options.click_test) {
+        const bool ok = sim::run_click_test(backend, *app, *control, display, g_fixed_tick);
+        kaffee::ui::detach_display_port(&display);
+        return ok ? 0 : 1;
     }
 
     if (options.page != 1) control->show_page(options.page - 1, false);

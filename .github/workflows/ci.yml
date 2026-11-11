@@ -46,6 +46,17 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y clang-format
       - run: make fmt-check
 
+  simulator:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev zlib1g-dev
+      - name: Click/hit-test smoke test
+        run: make test-ui
+      - name: Deterministic screenshots
+        run: make screenshots-check
+
   firmware:
     runs-on: ubuntu-24.04
     container:

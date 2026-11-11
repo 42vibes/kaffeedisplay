@@ -50,18 +50,34 @@ input:
 - `toast` — first member books the first product; 8 s undo toast visible
 - `ap` — WLAN hotspot active with Wi-Fi join and admin URL QR codes
 
-Screenshot mode forces the SDL dummy video driver, a fixed wall clock
-(2026-11-11 09:41 Europe/Berlin) and a fixed 16 ms tick, so reruns produce the
-same pixels (modulo SDL/zlib versions).
+Screenshot mode forces the SDL dummy video driver, `TZ=Europe/Berlin`, the C
+locale, a fixed wall clock (2026-11-11 09:41 Europe/Berlin) and a fixed 16 ms
+tick, so reruns produce the same pixels on hosts with any `TZ`. CI regenerates
+the set into a temporary directory and compares decompressed pixels with
+`tools/check_screenshots.py` (no ImageMagick/Pillow dependency).
 
-## Regenerate the committed set
+## Regenerate / verify the committed set
 
 ```sh
-make screenshots
+make screenshots        # writes docs/ui/screenshots/01-idle.png … 05-system-ap-qr.png
+make screenshots-check  # regenerates to /tmp and compares pixels with the committed set
 ```
 
-This writes `docs/ui/screenshots/01-idle.png` … `05-system-ap-qr.png`. Commit
-the result whenever the UI changes visibly.
+`make screenshots` is the deterministic batch. `make sim` stays the interactive
+SDL window; both build the same `kaffeekasse-sim` binary. Commit the screenshots
+whenever the UI changes visibly.
+
+## Click/hit-test smoke test
+
+```sh
+make test-ui
+./sim/build/kaffeekasse-sim --click-test
+```
+
+The test drives the real LVGL pointer indev at fixed 480×480 coordinates: avatars,
+name labels, product text columns, product badges, guest tile, page-dot centres,
+test-pattern dismissal, debounce, undo/undo expiry, guest-no-undo, auto-deselect
+and the guest-disabled guard. It does not call the `debug_*` state helpers.
 
 ## Fake backend
 

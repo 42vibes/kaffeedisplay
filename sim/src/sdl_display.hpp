@@ -30,9 +30,12 @@ class SdlDisplay final : public kaffee::ui::DisplayPort {
     lv_display_t* display() const override;
     kaffee::Result<kaffee::Unit> set_rotation(int degrees) override;
     kaffee::Result<kaffee::Unit> set_backlight(int percent) override;
+    kaffee::Result<kaffee::Unit> set_stay_awake(bool enabled) override;
 
     // Polls SDL events and updates pointer state. Returns false on quit.
     bool poll_events(std::vector<SimKey>* keys);
+    // Test hook: injects the same pointer state the SDL mouse path produces.
+    void inject_pointer(int x, int y, bool down);
     bool save_screenshot(const std::string& path);
     uint32_t tick_ms() const;
     int rotation() const {
@@ -40,6 +43,9 @@ class SdlDisplay final : public kaffee::ui::DisplayPort {
     }
     int brightness() const {
         return brightness_;
+    }
+    bool stay_awake() const {
+        return stay_awake_;
     }
     void request_quit() {
         quit_ = true;
@@ -60,6 +66,7 @@ class SdlDisplay final : public kaffee::ui::DisplayPort {
     int height_ = 480;
     int rotation_ = 0;
     int brightness_ = 100;
+    bool stay_awake_ = false;
     int mouse_x_ = 240;
     int mouse_y_ = 240;
     bool mouse_down_ = false;

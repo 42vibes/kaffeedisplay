@@ -53,6 +53,7 @@ void UiAppImpl::refresh_book_page() {
         if (user.active) active_users.push_back(user);
     }
     const bool guest_enabled = backend_.app_settings().guest_enabled;
+    if (!guest_enabled) guest_mode_ = false;
 
     auto user =
         selected_user_id_.empty() ? std::optional<User>{} : backend_.find_user(selected_user_id_);
@@ -115,6 +116,7 @@ void UiAppImpl::refresh_book_page() {
 
         lv_obj_t* grid = lv_obj_create(book_body_);
         theme::make_transparent(grid);
+        lv_obj_set_clickable(grid, false);
         lv_obj_set_width(grid, lv_pct(100));
         lv_obj_set_height(grid, LV_SIZE_CONTENT);
         lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
@@ -180,6 +182,7 @@ void UiAppImpl::refresh_book_page() {
 
     lv_obj_t* grid = lv_obj_create(book_body_);
     theme::make_transparent(grid);
+    lv_obj_set_clickable(grid, false);
     lv_obj_set_width(grid, lv_pct(100));
     lv_obj_set_height(grid, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);

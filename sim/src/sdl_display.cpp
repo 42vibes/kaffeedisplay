@@ -110,6 +110,11 @@ kaffee::Result<kaffee::Unit> SdlDisplay::set_backlight(int percent) {
     return kaffee::Result<kaffee::Unit>::ok(kaffee::Unit{});
 }
 
+kaffee::Result<kaffee::Unit> SdlDisplay::set_stay_awake(bool enabled) {
+    stay_awake_ = enabled;
+    return kaffee::Result<kaffee::Unit>::ok(kaffee::Unit{});
+}
+
 bool SdlDisplay::poll_events(std::vector<SimKey>* keys) {
     if (keys != nullptr) keys->clear();
     SDL_Event event;
@@ -175,6 +180,12 @@ bool SdlDisplay::poll_events(std::vector<SimKey>* keys) {
         }
     }
     return !quit_;
+}
+
+void SdlDisplay::inject_pointer(int x, int y, bool down) {
+    mouse_x_ = std::clamp(x, 0, width_ - 1);
+    mouse_y_ = std::clamp(y, 0, height_ - 1);
+    mouse_down_ = down;
 }
 
 bool SdlDisplay::save_screenshot(const std::string& path) {

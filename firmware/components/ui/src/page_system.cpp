@@ -25,6 +25,7 @@ lv_obj_t* make_info_row(lv_obj_t* parent, const char* name, const std::string& v
                         lv_color_t value_color = lv_color_hex(0xF5EFE6)) {
     lv_obj_t* row = lv_obj_create(parent);
     theme::make_transparent(row);
+    lv_obj_set_clickable(row, false);
     lv_obj_set_width(row, lv_pct(100));
     lv_obj_set_height(row, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
@@ -44,6 +45,7 @@ lv_obj_t* make_qr_block(lv_obj_t* parent, const std::string& payload, const char
                         int size) {
     lv_obj_t* block = lv_obj_create(parent);
     theme::make_transparent(block);
+    lv_obj_set_clickable(block, false);
     lv_obj_set_width(block, lv_pct(48));
     lv_obj_set_height(block, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(block, LV_FLEX_FLOW_COLUMN);
@@ -90,6 +92,7 @@ void UiAppImpl::build_page_system(lv_obj_t* tile) {
 void UiAppImpl::refresh_system_page() {
     if (system_body_ == nullptr) return;
     NetworkStatus network = backend_.network_status();
+    set_stay_awake(network.ap_active);
     TimeInfo time = backend_.time_info();
     DisplaySettings display = backend_.display_settings();
     bool display_changed = display.rotation != last_display_.rotation ||

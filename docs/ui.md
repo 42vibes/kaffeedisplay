@@ -2,8 +2,8 @@
 
 ## Device — 480×480 LVGL 9
 
-Horizontal `lv_tileview`, three pages, dots at the bottom. Swipe only; product
-taps never trigger navigation.
+Horizontal `lv_tileview`, three pages, dots at the bottom. Swipe or tap a page
+dot to change pages; product taps never trigger navigation.
 
 ### Page 1 — Buchen
 
@@ -68,7 +68,9 @@ fonts (Inter/Montserrat subset with umlauts and €), high contrast, big targets
 The simulator must produce deterministic screenshots into
 `docs/ui/screenshots/` (page 1 idle, page 1 selected, page 2, page 3 with AP/QR,
 admin dashboard, reports). They are committed and embedded in the top-level
-`README.md`. See `sim/README.md`.
+`README.md`. Regenerate the device set with `make screenshots`; `make sim` is the
+interactive loop. See `sim/README.md` and
+`firmware/components/ui/README.md` for the firmware integration seam.
 
 ## Strings
 

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kaffee/domain.hpp"
@@ -15,8 +16,14 @@ class FakeBackend final : public kaffee::IUiBackend {
   public:
     FakeBackend();
 
-    const std::vector<kaffee::User>& users() const override;
-    const std::vector<kaffee::Product>& products() const override;
+    // Follow the IUiBackend snapshot accessor return type (ADR 0012 changes it
+    // from const-ref to by-value). This keeps the simulator compiling before
+    // and after T-001 lands.
+    using UsersReturn = decltype(std::declval<const kaffee::IUiBackend&>().users());
+    using ProductsReturn = decltype(std::declval<const kaffee::IUiBackend&>().products());
+
+    UsersReturn users() const override;
+    ProductsReturn products() const override;
     std::optional<kaffee::User> find_user(const std::string& id) const override;
     std::optional<kaffee::Product> find_product(const std::string& id) const override;
     kaffee::Cents balance(const std::string& user_id) const override;
@@ -45,6 +52,8 @@ class FakeBackend final : public kaffee::IUiBackend {
     void set_rotation(int degrees);
     void set_brightness(int percent);
     void set_time_trusted(bool trusted);
+    void set_guest_enabled(bool enabled);
+    int count_events(kaffee::EventType type) const;
     int rotation() const {
         return display_.rotation;
     }
@@ -76,6 +85,7 @@ class FakeBackend final : public kaffee::IUiBackend {
     int sta_rssi_ = -58;
 
     bool time_trusted_ = true;
+    bool guest_enabled_ = true;
     int request_counter_ = 0;
 };
 

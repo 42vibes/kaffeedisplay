@@ -19,6 +19,7 @@ inline constexpr const char* BOOK_CHANGE_USER = "Wechseln";
 inline constexpr const char* BOOK_EMPTY = "Keine Benutzer – Admin: Seite 3 → WLAN starten";
 inline constexpr const char* BOOK_NO_PRODUCTS = "Keine Getränke hinterlegt";
 inline constexpr const char* BOOK_FAILED = "Buchung fehlgeschlagen";
+inline constexpr const char* BOOK_GUEST_DISABLED = "Gastverkäufe sind deaktiviert";
 inline constexpr const char* BOOK_UNDO = "Rückgängig";
 inline constexpr const char* BOOK_UNDONE = "Buchung storniert";
 inline constexpr const char* BOOK_UNDO_FAILED = "Stornierung fehlgeschlagen";
@@ -33,7 +34,6 @@ inline constexpr const char* STATS_EMPTY = "Keine Buchungen in diesem Monat";
 inline constexpr const char* STATS_GUEST = "Gastverkäufe";
 inline constexpr const char* STATS_TIME_WARNING =
     "Uhrzeit nicht synchron – Monat evtl. unvollständig";
-inline constexpr const char* STATS_NO_MONEY = "Nur Stückzahlen, keine Beträge";
 
 // Page 3 — System
 inline constexpr const char* SYSTEM_TITLE = "System";

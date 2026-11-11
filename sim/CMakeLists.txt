@@ -36,6 +36,8 @@ add_executable(kaffeekasse-sim
   src/fake_backend.cpp
   src/sdl_display.cpp
   src/png_writer.cpp
+  src/click_test.cpp
+  src/adapter_compile.cpp
   ${DOMAIN_DIR}/src/domain.cpp
   ${DOMAIN_DIR}/src/json.cpp
   ${DOMAIN_DIR}/src/sha256.cpp
@@ -56,6 +58,7 @@ add_executable(kaffeekasse-sim
 target_include_directories(kaffeekasse-sim PRIVATE
   ${UI_DIR}/include
   ${UI_DIR}/src
+  ${REPO_ROOT}/firmware/components/board/include
   ${DOMAIN_DIR}/include
   ${DOMAIN_DIR}/third_party
   ${REPO_ROOT}/firmware/components/service/include

@@ -74,11 +74,11 @@ void FakeBackend::notify() {
     if (change_callback_) change_callback_();
 }
 
-const std::vector<kaffee::User>& FakeBackend::users() const {
+FakeBackend::UsersReturn FakeBackend::users() const {
     return ledger_.users();
 }
 
-const std::vector<kaffee::Product>& FakeBackend::products() const {
+FakeBackend::ProductsReturn FakeBackend::products() const {
     return ledger_.products();
 }
 
@@ -206,7 +206,7 @@ kaffee::Result<kaffee::Unit> FakeBackend::extend_ap(int seconds) {
 
 kaffee::AppSettings FakeBackend::app_settings() const {
     kaffee::AppSettings settings;
-    settings.guest_enabled = true;
+    settings.guest_enabled = guest_enabled_;
     settings.currency = "EUR";
     settings.locale = "de-DE";
     return settings;
@@ -240,6 +240,18 @@ void FakeBackend::set_brightness(int percent) {
 
 void FakeBackend::set_time_trusted(bool trusted) {
     time_trusted_ = trusted;
+}
+
+void FakeBackend::set_guest_enabled(bool enabled) {
+    guest_enabled_ = enabled;
+}
+
+int FakeBackend::count_events(kaffee::EventType type) const {
+    int count = 0;
+    for (const kaffee::Event& event : ledger_.events()) {
+        if (event.type == type) ++count;
+    }
+    return count;
 }
 
 }  // namespace sim

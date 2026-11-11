@@ -17,5 +17,5 @@ idf_component_register(
     SRCS ${UI_SOURCES}
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "src"
-    REQUIRES service lvgl
+    REQUIRES service lvgl board
 )

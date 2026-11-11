@@ -6,10 +6,27 @@
 #include <utility>
 
 #include "format.hpp"
+#include "kaffee/ui_display.hpp"
 #include "strings.hpp"
 #include "theme.hpp"
 
 namespace kaffee::ui {
+
+namespace {
+DisplayPort* g_display_port = nullptr;
+}
+
+void attach_display_port(DisplayPort* port) {
+    g_display_port = port;
+}
+
+void detach_display_port(DisplayPort* port) {
+    if (g_display_port == port) g_display_port = nullptr;
+}
+
+DisplayPort* active_display_port() {
+    return g_display_port;
+}
 
 namespace {
 constexpr uint32_t kDebounceMs = 275;
@@ -51,6 +68,7 @@ Result<std::unique_ptr<UiApp>> UiApp::create(IUiBackend& backend) {
 UiAppImpl::UiAppImpl(IUiBackend& backend) : backend_(backend) {}
 
 UiAppImpl::~UiAppImpl() {
+    set_stay_awake(false);
     backend_.set_change_callback({});
     if (housekeeping_timer_ != nullptr) {
         lv_timer_delete(housekeeping_timer_);
@@ -248,6 +266,13 @@ void UiAppImpl::select_guest() {
 }
 
 void UiAppImpl::book_product(const Product& product) {
+    if (guest_mode_ && !backend_.app_settings().guest_enabled) {
+        guest_mode_ = false;
+        queue_.push();
+        show_toast(strings::BOOK_GUEST_DISABLED, false, "", kToastInfoMs);
+        return;
+    }
+
     uint32_t now = lv_tick_get();
     auto it = last_book_tick_.find(product.id);
     if (it != last_book_tick_.end() && now - it->second < kDebounceMs) return;
@@ -301,6 +326,13 @@ void UiAppImpl::update_headers() {
     }
 }
 
+void UiAppImpl::set_stay_awake(bool enabled) {
+    if (stay_awake_ == enabled) return;
+    stay_awake_ = enabled;
+    DisplayPort* port = active_display_port();
+    if (port != nullptr) port->set_stay_awake(enabled);
+}
+
 void UiAppImpl::update_dots() {
     for (int i = 0; i < 3; ++i) {
         if (dot_indicators_[i] == nullptr) continue;
@@ -317,6 +349,18 @@ void UiAppImpl::show_page(int index, bool animate) {
     current_page_ = index;
     page_entered_at_ = lv_tick_get();
     update_dots();
+}
+
+int UiAppImpl::page() const {
+    return current_page_;
+}
+
+bool UiAppImpl::test_pattern_active() const {
+    return test_overlay_ != nullptr;
+}
+
+bool UiAppImpl::guest_selected() const {
+    return guest_mode_;
 }
 
 void UiAppImpl::debug_select_user(const std::string& user_id) {

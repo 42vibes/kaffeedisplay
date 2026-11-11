@@ -38,6 +38,9 @@ class UiAppImpl final : public UiApp, public UiControl {
     void tick() override;
 
     void show_page(int index, bool animate) override;
+    int page() const override;
+    bool test_pattern_active() const override;
+    bool guest_selected() const override;
     void debug_select_user(const std::string& user_id) override;
     void debug_book(const std::string& product_id) override;
     void debug_deselect() override;
@@ -76,6 +79,7 @@ class UiAppImpl final : public UiApp, public UiControl {
     void update_headers();
     void update_system_dynamic();
     void update_dots();
+    void set_stay_awake(bool enabled);
     void update_system_indicator();
 
     void clear_selection();
@@ -159,6 +163,7 @@ class UiAppImpl final : public UiApp, public UiControl {
     lv_obj_t* system_time_warning_ = nullptr;
     lv_obj_t* stat_values_[STAT_COUNT] = {};
     bool last_ap_active_ = false;
+    bool stay_awake_ = false;
     bool last_sta_connected_ = false;
     bool last_time_trusted_ = false;
     DisplaySettings last_display_;

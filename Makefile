@@ -6,8 +6,10 @@ IDF_IMAGE ?= espressif/idf:release-v5.5
 IDF ?= $(shell command -v idf.py 2>/dev/null)
 NPM ?= npm
 CMAKE ?= cmake
+SCREENSHOT_DIR ?= docs/ui/screenshots
+SCREENSHOT_CHECK_DIR ?= /tmp/kaffeekasse-screenshots
 
-.PHONY: help bootstrap build build-native build-docker flash flash-docker monitor test test-host test-web test-e2e e2e hil web web-dev mock sim sim-build screenshots fmt fmt-check lint check clean
+.PHONY: help bootstrap build build-native build-docker flash flash-docker monitor test test-host test-web test-e2e e2e hil web web-dev mock sim sim-build screenshots screenshots-check test-ui fmt fmt-check lint check clean
 
 help:
 	@echo "Kaffeekasse targets:"
@@ -19,6 +21,7 @@ help:
 	@echo "  web-dev       Vite + mock API"
 	@echo "  sim           build and run the LVGL simulator"
 	@echo "  screenshots   regenerate docs/ui/screenshots from the simulator"
+	@echo "  test-ui       LVGL click/hit-test smoke test (SDL2, no board)"
 	@echo "  test          host + web tests"
 	@echo "  check         format, lint, tests, builds, size budgets"
 	@echo "  fmt           format C++ and TypeScript"
@@ -89,11 +92,20 @@ sim: sim-build
 	./sim/build/kaffeekasse-sim
 
 screenshots: sim-build
-	./sim/build/kaffeekasse-sim --screenshot docs/ui/screenshots/01-idle.png --page 1 --state idle
-	./sim/build/kaffeekasse-sim --screenshot docs/ui/screenshots/02-user-selected.png --page 1 --state selected
-	./sim/build/kaffeekasse-sim --screenshot docs/ui/screenshots/03-booking-toast.png --page 1 --state toast
-	./sim/build/kaffeekasse-sim --screenshot docs/ui/screenshots/04-leaderboard.png --page 2 --state idle
-	./sim/build/kaffeekasse-sim --screenshot docs/ui/screenshots/05-system-ap-qr.png --page 3 --state ap
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/01-idle.png --page 1 --state idle
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/02-user-selected.png --page 1 --state selected
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/03-booking-toast.png --page 1 --state toast
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/04-leaderboard.png --page 2 --state idle
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/05-system-ap-qr.png --page 3 --state ap
+
+screenshots-check: sim-build
+	rm -rf $(SCREENSHOT_CHECK_DIR)
+	mkdir -p $(SCREENSHOT_CHECK_DIR)
+	$(MAKE) screenshots SCREENSHOT_DIR=$(SCREENSHOT_CHECK_DIR)
+	python3 tools/check_screenshots.py docs/ui/screenshots $(SCREENSHOT_CHECK_DIR)
+
+test-ui: sim-build
+	./sim/build/kaffeekasse-sim --click-test
 
 fmt:
 	@if command -v clang-format >/dev/null; then \

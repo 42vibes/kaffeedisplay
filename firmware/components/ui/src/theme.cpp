@@ -30,6 +30,7 @@ void hide_scrollbars(lv_obj_t* obj) {
 lv_obj_t* make_card(lv_obj_t* parent) {
     lv_obj_t* obj = lv_obj_create(parent);
     lv_obj_set_scrollable(obj, false);
+    lv_obj_set_clickable(obj, false);
     lv_obj_set_style_bg_color(obj, color(COLOR_SURFACE), 0);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(obj, 0, 0);
@@ -81,6 +82,7 @@ lv_obj_t* make_button(lv_obj_t* parent, const char* text, bool primary) {
 lv_obj_t* make_row(lv_obj_t* parent, int gap) {
     lv_obj_t* row = lv_obj_create(parent);
     make_transparent(row);
+    lv_obj_set_clickable(row, false);
     lv_obj_set_width(row, lv_pct(100));
     lv_obj_set_height(row, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
@@ -94,6 +96,7 @@ lv_obj_t* make_row(lv_obj_t* parent, int gap) {
 lv_obj_t* make_column(lv_obj_t* parent, int gap) {
     lv_obj_t* column = lv_obj_create(parent);
     make_transparent(column);
+    lv_obj_set_clickable(column, false);
     lv_obj_set_width(column, lv_pct(100));
     lv_obj_set_height(column, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(column, LV_FLEX_FLOW_COLUMN);
@@ -107,6 +110,7 @@ lv_obj_t* make_column(lv_obj_t* parent, int gap) {
 lv_obj_t* make_circle(lv_obj_t* parent, int size, lv_color_t fill) {
     lv_obj_t* circle = lv_obj_create(parent);
     lv_obj_set_scrollable(circle, false);
+    lv_obj_set_clickable(circle, false);
     lv_obj_set_size(circle, size, size);
     lv_obj_set_style_radius(circle, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(circle, fill, 0);
