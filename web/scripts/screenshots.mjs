@@ -32,9 +32,20 @@ function start(command, args) {
     cwd: process.cwd(),
     stdio: "ignore",
     env: process.env,
+    detached: true,
   });
   children.push(child);
   return child;
+}
+
+function stopChildren() {
+  for (const child of children) {
+    try {
+      process.kill(-child.pid, "SIGTERM");
+    } catch {
+      child.kill("SIGTERM");
+    }
+  }
 }
 
 async function login(page) {
@@ -113,12 +124,12 @@ async function main() {
     await context.close();
   } finally {
     await browser.close();
-    for (const child of children) child.kill("SIGTERM");
+    stopChildren();
   }
 }
 
 main().catch((error) => {
   console.error(error);
-  for (const child of children) child.kill("SIGTERM");
+  stopChildren();
   process.exitCode = 1;
 });

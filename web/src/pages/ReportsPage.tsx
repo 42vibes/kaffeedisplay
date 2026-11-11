@@ -9,13 +9,13 @@ import { de } from "../i18n/de";
 import { errorText } from "../lib/errors";
 import {
   dateInputValue,
-  formatDate,
-  formatDateTime,
+  formatDateInZone,
+  formatDateTimeInZone,
   formatEuro,
   formatInteger,
-  monthKey,
 } from "../lib/format";
-import { periodRange } from "../lib/period";
+import { monthKeyInZone, periodRange } from "../lib/period";
+import { reportSummary, timeQualityState } from "../lib/report";
 import { useAsync } from "../lib/useAsync";
 
 const kinds: Array<{ kind: ReportKind; label: string }> = [
@@ -80,7 +80,8 @@ export function ReportsPage() {
     setNotice("");
     try {
       const text = await api.reportCsv(params, format);
-      const filename = `kaffeekasse_${monthKey(Math.floor(Date.now() / 1000))}_${kind}.csv`;
+      const filenameSeconds = range.from ?? Math.floor(Date.now() / 1000);
+      const filename = `kaffeekasse_${monthKeyInZone(filenameSeconds)}_${kind}.csv`;
       const body = format === "csv_excel" && !text.startsWith("\uFEFF") ? `\uFEFF${text}` : text;
       downloadText(filename, body, "text/csv;charset=utf-8");
       setNotice(de.exportSuccess);
@@ -197,9 +198,9 @@ export function ReportsPage() {
         </Alert>
       ) : null}
 
-      {report.loading && !report.data ? <div className="muted">{de.loading}</div> : null}
+      {report.loading ? <div className="muted">{de.loading}</div> : null}
 
-      {report.data && !invalidRange ? (
+      {report.data && !report.loading && !report.error && !invalidRange ? (
         <ReportView payload={report.data} />
       ) : null}
     </div>
@@ -209,7 +210,7 @@ export function ReportsPage() {
 function ReportView({ payload }: { payload: ReportPayload }) {
   const from = typeof payload.from === "number" ? payload.from : undefined;
   const to = typeof payload.to === "number" ? payload.to : undefined;
-  const quality = payload.time_quality;
+  const quality = timeQualityState(payload.time_quality?.trusted);
 
   const sections =
     payload.sections && payload.sections.length > 0
@@ -218,24 +219,26 @@ function ReportView({ payload }: { payload: ReportPayload }) {
         ? [{ title: undefined, columns: payload.columns, rows: payload.rows, totals: payload.totals }]
         : [];
 
-  const totals = payload.totals ?? {};
-  const totalEntries = Object.entries(totals);
+  const summaryValues = reportSummary(payload);
+  const hasSummary = Object.keys(summaryValues).length > 0;
 
   return (
     <div className="space-y-4">
       <div className="card flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
         <div className="muted">
-          {from ? formatDate(from) : de.allTime}
-          {to ? ` – ${formatDate(to - 86400)}` : ""}
+          {from ? formatDateInZone(from) : de.allTime}
+          {to ? ` – ${formatDateInZone(to - 1)}` : ""}
         </div>
-        {quality?.trusted === false ? (
+        {quality === "trusted" ? (
+          <span className="text-sage-400">{de.trustedTime}</span>
+        ) : quality === "untrusted" ? (
           <span className="text-amber-400">{de.untrustedTime}</span>
         ) : (
-          <span className="text-sage-400">{de.trustedTime}</span>
+          <span className="muted">{de.timeQualityUnknown}</span>
         )}
       </div>
 
-      {sections.length === 0 && totalEntries.length === 0 ? (
+      {sections.length === 0 && !hasSummary ? (
         <div className="card p-8 text-center muted">{de.reportEmpty}</div>
       ) : null}
 
@@ -243,10 +246,14 @@ function ReportView({ payload }: { payload: ReportPayload }) {
         <SectionView key={`${section.title ?? "section"}-${index}`} section={section} />
       ))}
 
-      {sections.length === 0 && totalEntries.length > 0 ? (
+      {sections.length === 0 && hasSummary ? (
         <section className="card p-4 sm:p-5">
-          <h2 className="font-medium">{de.reportTotals}</h2>
-          <DefinitionGrid values={Object.fromEntries(totalEntries)} />
+          <h2 className="font-medium">
+            {Object.keys(summaryValues).length > Object.keys(payload.totals ?? {}).length
+              ? de.reportMetrics
+              : de.reportTotals}
+          </h2>
+          <DefinitionGrid values={summaryValues} />
         </section>
       ) : null}
     </div>
@@ -306,10 +313,10 @@ function Cell({
     return <span>{formatEuro(Number(value))}</span>;
   }
   if (type === "number") return <span>{formatInteger(Number(value))}</span>;
-  if (type === "date") return <span>{formatDate(Number(value))}</span>;
-  if (type === "datetime") return <span>{formatDateTime(Number(value))}</span>;
+  if (type === "date") return <span>{formatDateInZone(Number(value))}</span>;
+  if (type === "datetime") return <span>{formatDateTimeInZone(Number(value))}</span>;
   if (type === "boolean") return <span>{value ? de.yes : de.no}</span>;
-  if (columnKey === "ts") return <span>{formatDateTime(Number(value))}</span>;
+  if (columnKey === "ts") return <span>{formatDateTimeInZone(Number(value))}</span>;
   if (typeof value === "boolean") return <span>{value ? de.yes : de.no}</span>;
   if (typeof value === "object") return <span>{JSON.stringify(value)}</span>;
   return <span>{String(value)}</span>;

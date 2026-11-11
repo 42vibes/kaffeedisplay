@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const PASSWORD = "kaffee";
+const MOCK = "http://127.0.0.1:8787/api/v1";
+
+async function resetMock(request: APIRequestContext) {
+  const response = await request.post(`${MOCK}/__test/reset`);
+  expect(response.ok()).toBeTruthy();
+}
 
 async function login(page: Page) {
   await page.goto("/");
@@ -9,6 +15,11 @@ async function login(page: Page) {
   await page.getByRole("button", { name: "Anmelden" }).click();
   await expect(page.getByRole("heading", { name: "Übersicht" })).toBeVisible();
 }
+
+test.beforeEach(async ({ request }) => {
+  await resetMock(request);
+});
+
 
 test("login rejects a wrong password and accepts the admin", async ({ page }) => {
   await page.goto("/");
@@ -32,12 +43,22 @@ test("creates a user", async ({ page }) => {
   await page.goto("/users");
   await page.getByRole("button", { name: "Benutzer anlegen" }).click();
 
+  const name = `Testuser ${Date.now()}`;
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Name").fill("Testuser");
+  await dialog.getByLabel("Name").fill(name);
   await dialog.getByRole("button", { name: "Speichern" }).click();
 
   await expect(page.getByText("Benutzer angelegt.")).toBeVisible();
-  await expect(page.getByRole("listitem").filter({ hasText: "Testuser" })).toBeVisible();
+  const card = page.getByRole("listitem").filter({ hasText: name });
+  await expect(card).toBeVisible();
+
+  await card.getByRole("button", { name: "Archivieren" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Archivieren" }).click();
+  await expect(card).toHaveCount(0);
+  await page.getByLabel("Inaktive anzeigen").check();
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Wiederherstellen" }).click();
+  await expect(page.getByText("Benutzer wiederhergestellt.")).toBeVisible();
 });
 
 test("records a topup for a member", async ({ page }) => {
@@ -55,7 +76,7 @@ test("records a topup for a member", async ({ page }) => {
   await expect(page.getByRole("listitem").filter({ hasText: "Ada" }).first()).toContainText("17,50 €");
 });
 
-test("downloads an Excel-compatible CSV report", async ({ page }) => {
+test("downloads an Excel-compatible CSV report with a period filename", async ({ page }) => {
   await login(page);
   await page.goto("/reports");
   await expect(page.getByRole("heading", { name: "Berichte" })).toBeVisible();
@@ -70,6 +91,130 @@ test("downloads an Excel-compatible CSV report", async ({ page }) => {
   const content = readFileSync(path!, "utf8");
   expect(content).toContain("sep=;");
   expect(content).toContain("Kassenstand");
+
+  await page.getByRole("button", { name: "Benutzerdefiniert" }).click();
+  await page.getByLabel("Startdatum").fill("2026-03-01");
+  await page.getByLabel("Enddatum").fill("2026-03-31");
+  await expect(page.getByText("01.03.2026 – 31.03.2026")).toBeVisible();
+
+  const customDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "CSV (Excel)" }).click();
+  expect((await customDownload).suggestedFilename()).toBe(
+    "kaffeekasse_2026-03_overview.csv",
+  );
+});
+
+test("product CRUD sends a full ProductInput for reorder and archive", async ({ page }) => {
+  const patches: Array<Record<string, unknown>> = [];
+  page.on("request", (request) => {
+    if (request.method() === "PATCH" && request.url().includes("/api/v1/products/")) {
+      patches.push(request.postDataJSON() as Record<string, unknown>);
+    }
+  });
+
+  await login(page);
+  await page.goto("/products");
+  const name = `Testgetränk ${Date.now()}`;
+
+  await page.getByRole("button", { name: "Getränk anlegen" }).click();
+  const create = page.getByRole("dialog");
+  await create.getByLabel("Bezeichnung").fill(name);
+  await create.getByLabel("Preis in Euro").fill("1,20");
+  await create.getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByText("Getränk angelegt.")).toBeVisible();
+
+  const card = page.getByRole("listitem").filter({ hasText: name });
+  await expect(card).toBeVisible();
+
+  // Reorder: two full PATCH bodies.
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: "Espresso" })
+    .getByRole("button", { name: "Nach oben" })
+    .click();
+  await expect
+    .poll(() => patches.length)
+    .toBeGreaterThanOrEqual(2);
+
+  // Archive, restore and delete must all use the full body too.
+  await card.getByRole("button", { name: "Archivieren" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Archivieren" }).click();
+  await expect(card).toHaveCount(0);
+
+  await page.getByLabel("Archivierte anzeigen").check();
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Wiederherstellen" }).click();
+  await expect(page.getByText("Getränk wiederhergestellt.")).toBeVisible();
+
+  await card.getByRole("button", { name: "Löschen" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Endgültig löschen" }).click();
+  await expect(page.getByText("Getränk gelöscht.")).toBeVisible();
+
+  const required = ["name", "category", "price_cents", "icon", "color", "sort", "active"];
+  for (const body of patches) {
+    for (const key of required) expect(body).toHaveProperty(key);
+  }
+});
+
+test("creates and voids an expense", async ({ page }) => {
+  await login(page);
+  await page.goto("/expenses");
+  const description = `Testausgabe ${Date.now()}`;
+
+  await page.getByRole("button", { name: "Ausgabe erfassen" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Beschreibung").fill(description);
+  await dialog.getByLabel("Betrag in Euro").fill("12,34");
+  await dialog.getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByText("Ausgabe erfasst.")).toBeVisible();
+
+  const row = page.getByRole("row").filter({ hasText: description });
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "Stornieren" }).click();
+
+  const voidDialog = page.getByRole("dialog");
+  await voidDialog.getByLabel("Grund").fill("Doppelt erfasst");
+  await voidDialog.getByRole("button", { name: "Stornieren" }).click();
+  await expect(page.getByText("Ausgabe storniert.")).toBeVisible();
+  await expect(row).toContainText("Storniert");
+});
+
+test("applies display settings and starts/stops the AP with QR codes", async ({ page }) => {
+  await login(page);
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "90°" }).click();
+  await page.getByRole("button", { name: "Speichern", exact: true }).click();
+  await expect(page.getByText("Anzeige aktualisiert.")).toBeVisible();
+
+  await page.goto("/system");
+  await page.getByText("WLAN-Zugangspunkt").waitFor();
+  await page.getByRole("button", { name: "WLAN starten" }).click();
+  await expect(page.getByText("WLAN aktiv")).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: "QR-Code: WLAN beitreten" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: "QR-Code: Admin-Seite öffnen" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Werkseinstellungen (noch nicht verfügbar)" }),
+  ).toBeDisabled();
+
+  await page.getByRole("button", { name: "WLAN stoppen" }).click();
+  const stop = page.getByRole("dialog");
+  await expect(stop).toContainText("WLAN wirklich stoppen");
+  await stop.getByRole("button", { name: "WLAN stoppen" }).click();
+  await expect(page.getByText("WLAN aus")).toBeVisible();
+});
+
+test("shows the untrusted-time alert after login", async ({ page, request }) => {
+  await login(page);
+  const response = await request.post(`${MOCK}/__test/time-untrusted`);
+  expect(response.ok()).toBeTruthy();
+  await page.reload();
+  await expect(
+    page.getByText("Die Gerätezeit ist nicht synchronisiert.", { exact: false }),
+  ).toBeVisible();
 });
 
 test("renders the dashboard at 360 px", async ({ page }) => {

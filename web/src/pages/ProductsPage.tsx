@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { newRequestId } from "../api/client";
 import { api } from "../api/endpoints";
 import type { Product, ProductInput } from "../api/types";
 import { Alert } from "../components/Alert";
@@ -9,10 +10,10 @@ import { PageHeader } from "../components/PageHeader";
 import { ProductIcon, productIcons } from "../components/ProductIcon";
 import { de } from "../i18n/de";
 import { errorText } from "../lib/errors";
-import { centsFromInput, formatEuro, inputFromCents } from "../lib/format";
+import { formatEuro, inputFromCents, parseMoneyInput } from "../lib/format";
+import { toProductInput } from "../lib/productInput";
 import { useAsync } from "../lib/useAsync";
 import { useWriteId } from "../lib/useWriteId";
-import { newRequestId } from "../api/client";
 
 const colors = ["#D4A373", "#B5835A", "#9B6B43", "#8FBC8F", "#7FA7C9", "#E07A5F", "#C9A0DC", "#F2CC8F"];
 
@@ -51,8 +52,8 @@ export function ProductsPage() {
         if (!showArchived && !product.active) return false;
         if (!query) return true;
         return (
-          product.name.toLowerCase().includes(query) ||
-          product.category.toLowerCase().includes(query)
+          (product.name ?? "").toLowerCase().includes(query) ||
+          (product.category ?? "").toLowerCase().includes(query)
         );
       })
       .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "de"));
@@ -73,8 +74,16 @@ export function ProductsPage() {
     setNotice("");
     try {
       await Promise.all([
-        api.updateProduct(product.id, { sort: neighbor.sort }, newRequestId()),
-        api.updateProduct(neighbor.id, { sort: product.sort }, newRequestId()),
+        api.updateProduct(
+          product.id,
+          toProductInput(product, { sort: neighbor.sort }),
+          newRequestId(),
+        ),
+        api.updateProduct(
+          neighbor.id,
+          toProductInput(neighbor, { sort: product.sort }),
+          newRequestId(),
+        ),
       ]);
       products.reload();
     } catch (err) {
@@ -89,7 +98,7 @@ export function ProductsPage() {
     setMoving(product.id);
     setNotice("");
     try {
-      await api.updateProduct(product.id, { active }, writeId.id);
+      await api.updateProduct(product.id, toProductInput(product, { active }), writeId.id);
       writeId.renew();
       setNoticeTone("good");
       setNotice(active ? de.productRestored : de.productArchived);
@@ -236,7 +245,13 @@ export function ProductsPage() {
           body={de.archiveProductBody}
           product={dialog.product}
           confirmLabel={de.archive}
-          action={(requestId) => api.updateProduct(dialog.product.id, { active: false }, requestId)}
+          action={(requestId) =>
+            api.updateProduct(
+              dialog.product.id,
+              toProductInput(dialog.product, { active: false }),
+              requestId,
+            )
+          }
           onClose={() => setDialog(null)}
           onSaved={() => saved(de.productArchived)}
         />
@@ -280,19 +295,19 @@ function ProductFormDialog({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const cents = centsFromInput(price);
+    const money = parseMoneyInput(price);
     if (!name.trim() || !category.trim()) {
       setError(de.required);
       return;
     }
-    if (cents < 0 || price.trim() === "") {
+    if (!money.valid || money.cents < 0) {
       setError(de.invalidAmount);
       return;
     }
     const input: ProductInput = {
       name: name.trim(),
       category: category.trim(),
-      price_cents: cents,
+      price_cents: money.cents,
       icon,
       color,
       sort: Number.parseInt(sort, 10) || 0,

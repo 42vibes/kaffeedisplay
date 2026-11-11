@@ -3,6 +3,7 @@ import http from "node:http";
 const PORT = Number(process.env.MOCK_PORT ?? 8787);
 const now = Math.floor(Date.now() / 1000);
 const SESSION_COOKIE = "kaffee_session=mock";
+const CSRF_TOKEN = "mock-csrf-token";
 
 // ---------------------------------------------------------------------------
 // Seed data
@@ -300,6 +301,48 @@ let ap = {
   url_qr: "",
 };
 
+// Snapshot of the seed data so Playwright can reset state between tests.
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const seed = {
+  users: clone(users),
+  products: clone(products),
+  balances: clone(balances),
+  expenses: clone(expenses),
+  events: clone(events),
+  seq,
+  cashCounts: clone(cashCounts),
+  summary: clone(summary),
+  settings: clone(settings),
+  device: clone(device),
+  logs: clone(logs),
+  ap: clone(ap),
+};
+
+function replaceArray(target, source) {
+  target.splice(0, target.length, ...clone(source));
+}
+
+function replaceObject(target, source) {
+  for (const key of Object.keys(target)) delete target[key];
+  Object.assign(target, clone(source));
+}
+
+function resetMock() {
+  replaceArray(users, seed.users);
+  replaceArray(products, seed.products);
+  replaceObject(balances, seed.balances);
+  replaceArray(expenses, seed.expenses);
+  replaceArray(events, seed.events);
+  seq = seed.seq;
+  replaceArray(cashCounts, seed.cashCounts);
+  replaceObject(summary, seed.summary);
+  replaceObject(settings, seed.settings);
+  replaceObject(device, seed.device);
+  replaceArray(logs, seed.logs);
+  ap = clone(seed.ap);
+  notify("mock state reset");
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -365,36 +408,15 @@ function notify(message) {
   if (logs.length > 500) logs.shift();
 }
 
-function qrData(text) {
-  let seed = 2166136261;
-  for (const char of text) {
-    seed ^= char.charCodeAt(0);
-    seed = Math.imul(seed, 16777619);
-  }
-  const size = 21;
-  const cells = [];
-  let state = seed >>> 0;
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-      const finder =
-        (x < 7 && y < 7) || (x >= size - 7 && y < 7) || (x < 7 && y >= size - 7);
-      const value = finder ? (x % 6 === 0 || y % 6 === 0 || (x > 1 && x < 5 && y > 1 && y < 5)) : (state & 0x10000) !== 0;
-      if (value) cells.push(`<rect x="${x}" y="${y}" width="1" height="1"/>`);
-    }
-  }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" shape-rendering="crispEdges"><rect width="21" height="21" fill="#fff"/><g fill="#111">${cells.join("")}</g></svg>`;
-  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
-}
-
 function apStatus() {
   return {
     ...ap,
     active: ap.active,
     ssid: ap.active ? ap.ssid : settings.network.ap_ssid,
     password: ap.active ? ap.password : "",
-    wifi_qr: ap.active ? qrData(`WIFI:T:WPA;S:${ap.ssid};P:${ap.password};;`) : "",
-    url_qr: ap.active ? qrData(ap.url) : "",
+    // The real backend returns plain payloads; the SPA renders the QR locally.
+    wifi_qr: ap.active ? `WIFI:T:WPA;S:${ap.ssid};P:${ap.password};;` : "",
+    url_qr: ap.active ? ap.url : "",
   };
 }
 
@@ -539,19 +561,17 @@ function buildReport(kind, period, fromParam, toParam) {
   if (kind === "overview") {
     return {
       ...base,
-      totals: {
-        cash_expected_cents: summary.cash_expected_cents,
-        prepaid_cents: summary.prepaid_cents,
-        debts_cents: summary.debts_cents,
-        net_liabilities_cents: summary.net_liabilities_cents,
-        equity_cents: summary.equity_cents,
-        member_sales_cents: summary.member_sales_cents,
-        guest_sales_cents: summary.guest_sales_cents,
-        topups_cents: summary.topups_cents,
-        expenses_cents: summary.expenses_cents,
-        member_items: summary.member_items,
-        guest_items: summary.guest_items,
-      },
+      cash_expected_cents: summary.cash_expected_cents,
+      prepaid_cents: summary.prepaid_cents,
+      debts_cents: summary.debts_cents,
+      net_liabilities_cents: summary.net_liabilities_cents,
+      equity_cents: summary.equity_cents,
+      member_sales_cents: summary.member_sales_cents,
+      guest_sales_cents: summary.guest_sales_cents,
+      topups_cents: summary.topups_cents,
+      expenses_cents: summary.expenses_cents,
+      member_items: summary.member_items,
+      guest_items: summary.guest_items,
     };
   }
 
@@ -765,7 +785,14 @@ function csvCell(value, delimiter) {
 function toCsv(report, format) {
   const delimiter = format === "csv_excel" ? ";" : ",";
   const columns = report.columns ?? [];
-  if (columns.length === 0 && report.totals) {
+  const metaKeys = new Set(["kind", "period", "from", "to", "time_quality", "columns", "rows", "sections", "totals"]);
+  const flat = Object.fromEntries(
+    Object.entries(report).filter(
+      ([key, value]) => !metaKeys.has(key) && (value === null || typeof value !== "object"),
+    ),
+  );
+  const summary = { ...flat, ...(report.totals ?? {}) };
+  if (columns.length === 0 && Object.keys(summary).length > 0) {
     const labels = {
       cash_expected_cents: "Kassenstand",
       prepaid_cents: "Guthaben",
@@ -784,7 +811,7 @@ function toCsv(report, format) {
         ? ["Kennzahl", "Wert"]
         : ["metric", "value"];
     const lines = [header.join(delimiter)];
-    for (const [key, value] of Object.entries(report.totals)) {
+    for (const [key, value] of Object.entries(summary)) {
       const label = format === "csv_excel" ? labels[key] ?? key : key;
       const formatted =
         format === "csv_excel" && key.endsWith("_cents")
@@ -841,16 +868,32 @@ const server = http.createServer(async (req, res) => {
 
   if (path === "/api/v1/health") return json(res, 200, { status: "ok", version: "mock" });
 
+  // E2E-only helpers, intentionally unauthenticated and not part of OpenAPI.
+  if (path === "/api/v1/__test/reset" && method === "POST") {
+    resetMock();
+    return noContent(res);
+  }
+  if (path === "/api/v1/__test/time-untrusted" && method === "POST") {
+    device.time = {
+      now,
+      source: "unset",
+      last_sync: 0,
+      last_source: "",
+      trusted: false,
+    };
+    return json(res, 200, device.time);
+  }
+
   if (path === "/api/v1/auth/login" && method === "POST") {
     const body = await readBody(req);
     if (body.username !== "admin" || body.password !== "kaffee") {
       return json(res, 401, { code: "auth", message: "invalid credentials" });
     }
     res.setHeader("Set-Cookie", `${SESSION_COOKIE}; Path=/; HttpOnly; SameSite=Strict`);
+    // Deliberately omit csrf_token: the SPA must refresh it via /auth/me.
     return json(res, 200, {
       username: "admin",
       expires_at: now + 3600,
-      csrf_token: "mock-csrf-token",
     });
   }
 
@@ -861,17 +904,25 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, {
       username: "admin",
       expires_at: now + 3600,
-      csrf_token: "mock-csrf-token",
+      csrf_token: CSRF_TOKEN,
     });
   }
 
   if (path === "/api/v1/auth/logout" && method === "POST") {
+    if (!hasSession(req) || req.headers["x-csrf-token"] !== CSRF_TOKEN) {
+      return json(res, 403, { code: "csrf", message: "invalid csrf token" });
+    }
     res.setHeader("Set-Cookie", "kaffee_session=; Path=/; Max-Age=0");
     return noContent(res);
   }
 
   if (!hasSession(req) && path !== "/api/v1/health") {
     return json(res, 401, { code: "unauthorized", message: "not logged in" });
+  }
+
+  const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  if (isWrite && req.headers["x-csrf-token"] !== CSRF_TOKEN) {
+    return json(res, 403, { code: "csrf", message: "invalid csrf token" });
   }
 
   if (path === "/api/v1/stats/summary") return json(res, 200, summary);
@@ -1053,8 +1104,17 @@ const server = http.createServer(async (req, res) => {
     const item = productById(match[1]);
     if (!item) return json(res, 404, { code: "not_found", message: "product not found" });
     const body = await readBody(req);
+    const missing = ["name", "category", "price_cents", "icon", "color", "sort", "active"].filter(
+      (key) => body[key] === undefined,
+    );
+    if (missing.length > 0) {
+      return json(res, 400, {
+        code: "invalid_product_input",
+        message: `PATCH /products requires full ProductInput; missing: ${missing.join(", ")}`,
+      });
+    }
     for (const key of ["name", "category", "icon", "color", "price_cents", "sort", "active"]) {
-      if (body[key] !== undefined) item[key] = body[key];
+      item[key] = body[key];
     }
     item.updated_at = now;
     addEvent({ type: "product_updated", product_id: item.id, unit_amount_cents: item.price_cents, amount_cents: 0 });

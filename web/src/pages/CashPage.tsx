@@ -8,7 +8,7 @@ import { PageHeader } from "../components/PageHeader";
 import { StatCard } from "../components/StatCard";
 import { de } from "../i18n/de";
 import { errorText } from "../lib/errors";
-import { centsFromInput, formatDateTime, formatSignedEuro, formatEuro } from "../lib/format";
+import { formatDateTime, formatSignedEuro, formatEuro, parseMoneyInput } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
 import { useWriteId } from "../lib/useWriteId";
 
@@ -32,13 +32,14 @@ export function CashPage() {
     [],
   );
 
-  const countedCents = counted.trim() ? centsFromInput(counted) : null;
+  const parsedCount = counted.trim() ? parseMoneyInput(counted) : null;
+  const countedCents = parsedCount?.valid ? parsedCount.cents : null;
   const expected = data.data?.summary.cash_expected_cents ?? 0;
   const difference = countedCents === null ? null : countedCents - expected;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (countedCents === null || countedCents < 0) {
+    if (!parsedCount?.valid || parsedCount.cents < 0) {
       setError(de.countedRequired);
       return;
     }
@@ -46,7 +47,7 @@ export function CashPage() {
     setError("");
     setNotice("");
     try {
-      await api.createCashCount(countedCents, note.trim(), writeId.id);
+      await api.createCashCount(parsedCount.cents, note.trim(), writeId.id);
       writeId.renew();
       setCounted("");
       setNote("");

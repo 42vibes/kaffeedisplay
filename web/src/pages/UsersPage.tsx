@@ -10,9 +10,9 @@ import { TransactionTable } from "../components/TransactionTable";
 import { de } from "../i18n/de";
 import { errorText } from "../lib/errors";
 import {
-  centsFromInput,
   formatDate,
   formatEuro,
+  parseMoneyInput,
 } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
 import { useWriteId } from "../lib/useWriteId";
@@ -43,7 +43,7 @@ export function UsersPage() {
     return (users.data ?? []).filter((user) => {
       if (!showInactive && !user.active) return false;
       if (!query) return true;
-      return user.name.toLowerCase().includes(query);
+      return (user.name ?? "").toLowerCase().includes(query);
     });
   }, [users.data, search, showInactive]);
 
@@ -343,15 +343,19 @@ function TopupDialog({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const cents = centsFromInput(amount);
-    if (cents <= 0) {
-      setError(cents === 0 ? de.amountPositive : de.invalidAmount);
+    const money = parseMoneyInput(amount);
+    if (!money.valid) {
+      setError(de.invalidAmount);
+      return;
+    }
+    if (money.cents <= 0) {
+      setError(money.cents === 0 ? de.amountPositive : de.invalidAmount);
       return;
     }
     setBusy(true);
     setError("");
     try {
-      await api.topup(user.id, cents, note.trim(), writeId.id);
+      await api.topup(user.id, money.cents, note.trim(), writeId.id);
       writeId.renew();
       onSaved();
     } catch (err) {
@@ -414,8 +418,12 @@ function AdjustDialog({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const cents = centsFromInput(amount);
-    if (cents === 0) {
+    const money = parseMoneyInput(amount);
+    if (!money.valid) {
+      setError(de.invalidAmount);
+      return;
+    }
+    if (money.cents === 0) {
       setError(de.amountNonZero);
       return;
     }
@@ -426,7 +434,7 @@ function AdjustDialog({
     setBusy(true);
     setError("");
     try {
-      await api.adjust(user.id, cents, note.trim(), writeId.id);
+      await api.adjust(user.id, money.cents, note.trim(), writeId.id);
       writeId.renew();
       onSaved();
     } catch (err) {

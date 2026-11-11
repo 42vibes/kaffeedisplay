@@ -101,7 +101,7 @@ export const api = {
       body: JSON.stringify(input),
       requestId,
     }),
-  updateProduct: (id: string, input: Partial<ProductInput>, requestId: string) =>
+  updateProduct: (id: string, input: ProductInput, requestId: string) =>
     request<Product>(`/products/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(input),
@@ -148,7 +148,9 @@ export const api = {
   report: (params: ReportRequest) =>
     request<ReportPayload>(`/reports/${params.kind}${reportQuery(params, "json")}`),
   reportCsv: (params: ReportRequest, format: Exclude<ReportFormat, "json">) =>
-    request<string>(`/reports/${params.kind}${reportQuery(params, format)}`),
+    request<string>(`/reports/${params.kind}${reportQuery(params, format)}`, {
+      accept: "text/csv",
+    }),
 
   // --- settings ------------------------------------------------------------
   settings: () => request<Settings>("/settings"),

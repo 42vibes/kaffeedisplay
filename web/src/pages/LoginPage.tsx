@@ -22,9 +22,13 @@ export function LoginPage({
     try {
       onLogin(await login(username.trim(), password));
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError && err.status === 401 ? de.wrongPassword : de.loginFailed,
-      );
+      if (err instanceof ApiRequestError) {
+        if (err.status === 401) setError(de.wrongPassword);
+        else if (err.status === 429) setError(de.tooManyRequests);
+        else setError(de.loginFailed);
+      } else {
+        setError(de.loginFailed);
+      }
     } finally {
       setBusy(false);
     }

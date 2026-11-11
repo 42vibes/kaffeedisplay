@@ -6,7 +6,7 @@ import { MoneyInput } from "../components/MoneyInput";
 import { PageHeader } from "../components/PageHeader";
 import { de } from "../i18n/de";
 import { errorText } from "../lib/errors";
-import { centsFromInput, formatEuro, inputFromCents } from "../lib/format";
+import { formatEuro, inputFromCents, parseMoneyInput } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
 import { useWriteId } from "../lib/useWriteId";
 
@@ -93,6 +93,13 @@ function SettingsForm({ initial }: { initial: Settings }) {
 
   async function saveGeneral(event: React.FormEvent) {
     event.preventDefault();
+    const debt = debtLimit.trim() ? parseMoneyInput(debtLimit) : { cents: 0, valid: true };
+    const low = lowBalance.trim() ? parseMoneyInput(lowBalance) : { cents: 0, valid: true };
+    if (!debt.valid || !low.valid) {
+      setError(de.invalidAmount);
+      setNotice("");
+      return;
+    }
     setBusy("general");
     setError("");
     setNotice("");
@@ -117,8 +124,8 @@ function SettingsForm({ initial }: { initial: Settings }) {
         currency: "EUR",
         locale: "de-DE",
         guest_enabled: guestEnabled,
-        max_open_debt_cents: centsFromInput(debtLimit),
-        low_balance_warning_cents: centsFromInput(lowBalance),
+        max_open_debt_cents: debt.cents,
+        low_balance_warning_cents: low.cents,
       },
     };
     try {
@@ -363,12 +370,20 @@ function SettingsForm({ initial }: { initial: Settings }) {
             <label className="block space-y-1.5">
               <span className="label">{de.maxOpenDebt}</span>
               <MoneyInput value={debtLimit} onChange={setDebtLimit} />
-              <div className="muted text-xs">{formatEuro(centsFromInput(debtLimit))}</div>
+              <div className="muted text-xs">
+                {debtLimit.trim() && !parseMoneyInput(debtLimit).valid
+                  ? de.invalidAmount
+                  : formatEuro(parseMoneyInput(debtLimit).cents)}
+              </div>
             </label>
             <label className="block space-y-1.5">
               <span className="label">{de.lowBalanceWarning}</span>
               <MoneyInput value={lowBalance} onChange={setLowBalance} />
-              <div className="muted text-xs">{formatEuro(centsFromInput(lowBalance))}</div>
+              <div className="muted text-xs">
+                {lowBalance.trim() && !parseMoneyInput(lowBalance).valid
+                  ? de.invalidAmount
+                  : formatEuro(parseMoneyInput(lowBalance).cents)}
+              </div>
             </label>
           </div>
         </section>

@@ -6,6 +6,7 @@ import { Alert } from "../components/Alert";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
+import { QrCode } from "../components/QrCode";
 import { StatCard } from "../components/StatCard";
 import { de } from "../i18n/de";
 import { errorText } from "../lib/errors";
@@ -26,12 +27,19 @@ interface SystemData {
   logs: LogsResponse;
 }
 
+// The firmware route is not part of the OpenAPI contract yet (see PR notes).
+// Keep the UI honest instead of firing a request that always 404s.
+const FACTORY_RESET_AVAILABLE = false;
+
 export function SystemPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [modalError, setModalError] = useState("");
+  const [resetError, setResetError] = useState("");
   const [busy, setBusy] = useState<"ap" | "time" | "backup" | "restore" | "ota" | "reset" | "">("");
   const [extendOpen, setExtendOpen] = useState(false);
   const [extendMinutes, setExtendMinutes] = useState("10");
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [restoreValue, setRestoreValue] = useState<unknown>(null);
   const [restoreName, setRestoreName] = useState("");
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
@@ -50,6 +58,8 @@ export function SystemPage() {
 
   function success(message: string) {
     setError("");
+    setModalError("");
+    setResetError("");
     setNotice(message);
   }
 
@@ -78,6 +88,7 @@ export function SystemPage() {
       await api.stopAp(writeId.id);
       writeId.renew();
       success(de.apStopped);
+      setStopConfirmOpen(false);
       data.reload();
     } catch (err) {
       failure(err);
@@ -135,6 +146,7 @@ export function SystemPage() {
 
   async function restore() {
     setBusy("restore");
+    setModalError("");
     try {
       await api.restore(restoreValue, writeId.id);
       writeId.renew();
@@ -144,7 +156,7 @@ export function SystemPage() {
       success(de.restoreSuccess);
       data.reload();
     } catch (err) {
-      failure(err);
+      setModalError(errorText(err));
     } finally {
       setBusy("");
     }
@@ -153,6 +165,7 @@ export function SystemPage() {
   async function uploadFirmware() {
     if (!otaFile) return;
     setBusy("ota");
+    setModalError("");
     try {
       await api.uploadFirmware(otaFile, writeId.id);
       writeId.renew();
@@ -160,7 +173,7 @@ export function SystemPage() {
       setOtaConfirmOpen(false);
       success(de.otaSuccess);
     } catch (err) {
-      failure(err);
+      setModalError(errorText(err));
     } finally {
       setBusy("");
     }
@@ -169,6 +182,7 @@ export function SystemPage() {
   async function factoryReset() {
     if (resetText !== de.factoryResetConfirm) return;
     setBusy("reset");
+    setResetError("");
     try {
       await api.factoryReset(resetWrite.id);
       resetWrite.renew();
@@ -176,8 +190,7 @@ export function SystemPage() {
       setResetText("");
       success(de.factoryResetSuccess);
     } catch {
-      setNotice("");
-      setError(de.factoryResetFailed);
+      setResetError(de.factoryResetFailed);
     } finally {
       setBusy("");
     }
@@ -225,8 +238,15 @@ export function SystemPage() {
             <h2 className="font-medium">{de.deviceStats}</h2>
             <dl className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               <Stat label={de.mac} value={device.mac} />
-              <Stat label={de.ipAddress} value={device.network.sta_ip || "–"} />
-              <Stat label={de.rssi} value={device.network.sta_connected ? `${device.network.sta_rssi} dBm` : "–"} />
+              <Stat label={de.ipAddress} value={device.network?.sta_ip || "–"} />
+              <Stat
+                label={de.rssi}
+                value={
+                  device.network?.sta_connected
+                    ? `${device.network.sta_rssi ?? "–"} dBm`
+                    : "–"
+                }
+              />
               <Stat
                 label={de.storage}
                 value={`${formatBytes(device.storage_used)} / ${formatBytes(device.storage_total)} (${formatPercent(
@@ -272,8 +292,8 @@ export function SystemPage() {
                     <button className="btn min-h-9 px-3 py-1 text-sm" type="button" onClick={() => setExtendOpen(true)} disabled={busy !== ""}>
                       {de.apExtend}
                     </button>
-                    <button className="btn btn-danger min-h-9 px-3 py-1 text-sm" type="button" onClick={stopAp} disabled={busy !== ""}>
-                      {busy === "ap" ? de.loading : de.apStop}
+                    <button className="btn btn-danger min-h-9 px-3 py-1 text-sm" type="button" onClick={() => setStopConfirmOpen(true)} disabled={busy !== ""}>
+                      {de.apStop}
                     </button>
                   </>
                 ) : (
@@ -288,14 +308,14 @@ export function SystemPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <div className="label">{de.apQrWifi}</div>
-                  <QrImage value={ap.wifi_qr} />
+                  <QrImage value={ap.wifi_qr} label={de.apQrWifi} />
                   <div className="muted mt-1 text-xs">
                     {ap.ssid} · {ap.password || "–"}
                   </div>
                 </div>
                 <div>
                   <div className="label">{de.apQrUrl}</div>
-                  <QrImage value={ap.url_qr} />
+                  <QrImage value={ap.url_qr} label={de.apQrUrl} />
                   <div className="muted mt-1 text-xs">
                     {de.apUrl}: {ap.url || ap.ip}
                   </div>
@@ -347,7 +367,10 @@ export function SystemPage() {
             <button
               className="btn"
               type="button"
-              onClick={() => setRestoreConfirmOpen(true)}
+              onClick={() => {
+                setModalError("");
+                setRestoreConfirmOpen(true);
+              }}
               disabled={!restoreValue || busy !== ""}
             >
               {busy === "restore" ? de.saving : de.restoreUpload}
@@ -375,7 +398,10 @@ export function SystemPage() {
           <button
             className="btn btn-primary"
             type="button"
-            onClick={() => setOtaConfirmOpen(true)}
+            onClick={() => {
+              setModalError("");
+              setOtaConfirmOpen(true);
+            }}
             disabled={!otaFile || busy !== ""}
           >
             {busy === "ota" ? de.uploading : de.otaUpload}
@@ -403,8 +429,14 @@ export function SystemPage() {
       <section className="rounded-2xl border border-rust-400/30 bg-rust-400/5 p-4 sm:p-5">
         <h2 className="font-medium text-rust-400">{de.dangerZone}</h2>
         <p className="muted mt-1 text-sm">{de.factoryResetBody}</p>
-        <button className="btn btn-danger mt-3" type="button" onClick={() => setResetOpen(true)}>
-          {de.factoryReset}
+        <button
+          className="btn btn-danger mt-3"
+          type="button"
+          onClick={() => setResetOpen(true)}
+          disabled={!FACTORY_RESET_AVAILABLE}
+          title={de.factoryResetGap}
+        >
+          {FACTORY_RESET_AVAILABLE ? de.factoryReset : de.factoryResetUnavailable}
         </button>
         <p className="muted mt-2 text-xs">{de.factoryResetGap}</p>
       </section>
@@ -439,12 +471,27 @@ export function SystemPage() {
       </Modal>
 
       <ConfirmDialog
+        open={stopConfirmOpen}
+        title={de.apStopTitle}
+        body={<p>{de.apStopBody}</p>}
+        confirmLabel={de.apStop}
+        busy={busy === "ap"}
+        onConfirm={stopAp}
+        onClose={() => setStopConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
         open={restoreConfirmOpen}
         title={de.restoreSection}
         body={
           <>
             <p>{de.restoreConfirm}</p>
             <p className="font-medium text-cream-50">{restoreName}</p>
+            {modalError ? (
+              <p className="text-rust-400" role="alert">
+                {modalError}
+              </p>
+            ) : null}
           </>
         }
         confirmLabel={de.restoreUpload}
@@ -454,6 +501,7 @@ export function SystemPage() {
           setRestoreConfirmOpen(false);
           setRestoreValue(null);
           setRestoreName("");
+          setModalError("");
         }}
       />
 
@@ -465,22 +513,43 @@ export function SystemPage() {
             <p>{de.otaHint}</p>
             <p className="font-medium text-cream-50">{otaFile?.name}</p>
             <p className="text-xs">{de.rebootHint}</p>
+            {modalError ? (
+              <p className="text-rust-400" role="alert">
+                {modalError}
+              </p>
+            ) : null}
           </>
         }
         confirmLabel={de.otaUpload}
         tone="primary"
         busy={busy === "ota"}
         onConfirm={uploadFirmware}
-        onClose={() => setOtaConfirmOpen(false)}
+        onClose={() => {
+          setOtaConfirmOpen(false);
+          setModalError("");
+        }}
       />
 
       <Modal
         open={resetOpen}
         title={de.factoryResetTitle}
-        onClose={() => setResetOpen(false)}
+        onClose={() => {
+          setResetOpen(false);
+          setResetText("");
+          setResetError("");
+        }}
         footer={
           <>
-            <button className="btn" type="button" onClick={() => setResetOpen(false)} disabled={busy !== ""}>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                setResetOpen(false);
+                setResetText("");
+                setResetError("");
+              }}
+              disabled={busy !== ""}
+            >
               {de.cancel}
             </button>
             <button
@@ -505,6 +574,11 @@ export function SystemPage() {
             autoComplete="off"
           />
         </label>
+        {resetError ? (
+          <p className="mt-3 text-sm text-rust-400" role="alert">
+            {resetError}
+          </p>
+        ) : null}
       </Modal>
     </div>
   );
@@ -519,16 +593,16 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function QrImage({ value }: { value: string }) {
+function QrImage({ value, label }: { value: string; label: string }) {
   if (!value) {
     return <div className="muted mt-2 text-xs">{de.apQrUnavailable}</div>;
   }
   if (value.startsWith("data:image/")) {
-    return <img src={value} alt={de.apQrWifi} className="mt-2 h-40 w-40 rounded-xl bg-white p-2" />;
+    return <img src={value} alt={label} className="mt-2 h-40 w-40 rounded-xl bg-white p-2" />;
   }
   return (
-    <code className="mt-2 block break-all rounded-xl border border-cream-100/10 p-2 text-xs">
-      {value}
-    </code>
+    <div className="mt-2 h-40 w-40 rounded-xl bg-white p-2">
+      <QrCode value={value} label={label} className="h-full w-full" />
+    </div>
   );
 }

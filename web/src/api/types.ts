@@ -99,9 +99,9 @@ export interface Expense {
   ts: number;
   category: string;
   description: string;
-  vendor: string;
+  vendor?: string;
   amount_cents: Cents;
-  note: string;
+  note?: string;
   voided: boolean;
 }
 
@@ -204,15 +204,15 @@ export interface ApStatus {
 }
 
 export interface NetworkStatus {
-  ap_active: boolean;
-  ap_starting: boolean;
-  ap_remaining_s: number;
-  ap_ssid: string;
-  ap_password: string;
-  ap_ip: string;
-  sta_connected: boolean;
-  sta_ip: string;
-  sta_rssi: number;
+  ap_active?: boolean;
+  ap_starting?: boolean;
+  ap_remaining_s?: number;
+  ap_ssid?: string;
+  ap_password?: string;
+  ap_ip?: string;
+  sta_connected?: boolean;
+  sta_ip?: string;
+  sta_rssi?: number;
 }
 
 export interface DeviceStatus {
@@ -226,7 +226,7 @@ export interface DeviceStatus {
   temperature_c: number;
   temperature_valid: boolean;
   mac: string;
-  network: NetworkStatus;
+  network?: NetworkStatus;
   time: TimeInfo;
   last_backup_at?: number;
   drinks_today: number;

@@ -1,4 +1,5 @@
-import { centsFromInput, formatSignedEuro } from "../lib/format";
+import { de } from "../i18n/de";
+import { formatSignedEuro, parseMoneyInput } from "../lib/format";
 
 /** Text input that keeps the raw German decimal string while typing. */
 export function MoneyInput({
@@ -45,8 +46,11 @@ export function MoneyPreview({
   value: string;
   allowNegative?: boolean;
 }) {
-  const cents = centsFromInput(value);
-  if (cents === 0) return null;
-  if (!allowNegative && cents < 0) return null;
-  return <div className="muted mt-1 text-xs">{formatSignedEuro(cents)}</div>;
+  if (!value.trim()) return null;
+  const money = parseMoneyInput(value);
+  if (!money.valid) {
+    return <div className="mt-1 text-xs text-rust-400">{de.invalidAmount}</div>;
+  }
+  if (!allowNegative && money.cents < 0) return null;
+  return <div className="muted mt-1 text-xs">{formatSignedEuro(money.cents)}</div>;
 }

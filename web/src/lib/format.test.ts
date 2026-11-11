@@ -1,15 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   centsFromInput,
-  dateInputToSeconds,
   formatBytes,
   formatDuration,
   formatEuro,
   formatSignedEuro,
   inputFromCents,
   monthKey,
+  parseMoneyInput,
 } from "./format";
-import { periodRange } from "./period";
 
 const plain = (value: string) => value.replace(/\u00a0/g, " ");
 
@@ -41,6 +40,16 @@ describe("money formatting", () => {
     expect(centsFromInput("abc")).toBe(0);
   });
 
+  it("distinguishes valid money from junk and empty input", () => {
+    expect(parseMoneyInput("1,50")).toEqual({ cents: 150, valid: true });
+    expect(parseMoneyInput("1.234,56")).toEqual({ cents: 123456, valid: true });
+    expect(parseMoneyInput("0")).toEqual({ cents: 0, valid: true });
+    expect(parseMoneyInput("")).toEqual({ cents: 0, valid: false });
+    expect(parseMoneyInput("abc")).toEqual({ cents: 0, valid: false });
+    expect(parseMoneyInput("1,234")).toEqual({ cents: 0, valid: false });
+    expect(parseMoneyInput("12.")).toEqual({ cents: 0, valid: false });
+  });
+
   it("round-trips cents input", () => {
     expect(inputFromCents(150)).toBe("1,50");
     expect(inputFromCents(-225)).toBe("-2,25");
@@ -61,22 +70,5 @@ describe("system formatting", () => {
   it("formats durations", () => {
     expect(formatDuration(45)).toBe("45 s");
     expect(formatDuration(3660)).toBe("1 h 1 min");
-  });
-});
-
-describe("custom report periods", () => {
-  it("converts date inputs to an exclusive end of day", () => {
-    const from = dateInputToSeconds("2026-11-01");
-    const to = dateInputToSeconds("2026-11-11");
-    expect(from).toBeDefined();
-    expect(to).toBeDefined();
-    expect(periodRange("custom", "2026-11-01", "2026-11-11")).toEqual({
-      from,
-      to: (to ?? 0) + 86400,
-    });
-  });
-
-  it("returns no bounds for all time", () => {
-    expect(periodRange("all")).toEqual({});
   });
 });

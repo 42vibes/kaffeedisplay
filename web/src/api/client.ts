@@ -35,10 +35,11 @@ async function request<T>(
     skipCsrf?: boolean;
     requestId?: string;
     skipUnauthorizedHandler?: boolean;
+    accept?: string;
   } = {},
 ): Promise<T> {
   const headers = new Headers(options.headers);
-  headers.set("Accept", "application/json");
+  headers.set("Accept", options.accept ?? "application/json");
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   if (options.body && !isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -90,12 +91,21 @@ export async function login(username: string, password: string): Promise<Session
     skipUnauthorizedHandler: true,
   });
   setSession(result);
+  // The login response may omit the CSRF token; /auth/me is the canonical
+  // source and must be refreshed before the first write.
+  let active = result;
+  try {
+    active = await request<Session>("/auth/me", { skipUnauthorizedHandler: true });
+    setSession(active);
+  } catch {
+    // Keep the login response if the follow-up session check fails.
+  }
   try {
     await syncTimeFromBrowser();
   } catch {
     // Login succeeded; a failed clock sync must not block the session.
   }
-  return result;
+  return active;
 }
 
 export async function logout(): Promise<void> {

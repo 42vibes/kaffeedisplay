@@ -44,6 +44,27 @@ export function formatDate(seconds: number): string {
   }).format(new Date(seconds * 1000));
 }
 
+export function formatDateInZone(seconds: number, timeZone = "Europe/Berlin"): string {
+  return new Intl.DateTimeFormat("de-DE", {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(seconds * 1000));
+}
+
+export function formatDateTimeInZone(seconds: number, timeZone = "Europe/Berlin"): string {
+  if (!seconds) return "–";
+  return new Intl.DateTimeFormat("de-DE", {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(seconds * 1000));
+}
+
 export function formatDateShort(seconds: number): string {
   return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
@@ -107,33 +128,34 @@ export function dateInputValue(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-/** Parse local yyyy-mm-dd into epoch seconds at local midnight. */
-export function dateInputToSeconds(value: string): number | undefined {
-  if (!value) return undefined;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return undefined;
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  if (Number.isNaN(date.getTime())) return undefined;
-  return Math.floor(date.getTime() / 1000);
+export interface MoneyParse {
+  cents: number;
+  valid: boolean;
 }
 
 /**
  * Parse a German money input into integer cents.
- * Accepts `1,50`, `1.234,56`, `0.50`, `12`, an optional currency symbol and
- * leading +/- for adjustments.
+ * Accepts `1,50`, `1.234,56`, `0.50`, `12`, an optional currency symbol and a
+ * leading +/−. Returns `valid: false` for empty or junk input so forms can
+ * reject `abc` instead of silently booking zero cents.
  */
-export function centsFromInput(value: string): number {
-  let normalized = value.trim().replace(/[\s€]/g, "");
-  if (!normalized) return 0;
-  const negative = normalized.startsWith("-") || normalized.startsWith("−");
-  normalized = normalized.replace(/^[+−-]/, "");
+export function parseMoneyInput(value: string): MoneyParse {
+  const raw = value.trim().replace(/[\s€]/g, "");
+  if (!raw) return { cents: 0, valid: false };
+  const negative = raw.startsWith("-") || raw.startsWith("−");
+  const unsigned = raw.replace(/^[+−-]/, "");
   // German thousands separators: 1.234,56 -> 1234.56
-  normalized = normalized.replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".");
-  if (!/^\d*\.?\d*$/.test(normalized) || normalized === "." || normalized === "") return 0;
+  const normalized = unsigned.replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return { cents: 0, valid: false };
   const parsed = Number.parseFloat(normalized);
-  if (Number.isNaN(parsed)) return 0;
-  return Math.round(parsed * 100) * (negative ? -1 : 1);
+  if (!Number.isFinite(parsed)) return { cents: 0, valid: false };
+  return { cents: Math.round(parsed * 100) * (negative ? -1 : 1), valid: true };
 }
+
+export function centsFromInput(value: string): number {
+  return parseMoneyInput(value).cents;
+}
+
 
 export function inputFromCents(cents: number): string {
   const sign = cents < 0 ? "-" : "";

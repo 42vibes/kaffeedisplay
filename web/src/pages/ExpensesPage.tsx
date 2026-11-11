@@ -9,7 +9,7 @@ import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { de } from "../i18n/de";
 import { errorText } from "../lib/errors";
-import { centsFromInput, formatDate, formatEuro, inputFromCents } from "../lib/format";
+import { formatDate, formatEuro, inputFromCents, parseMoneyInput } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
 import { useWriteId } from "../lib/useWriteId";
 
@@ -33,9 +33,9 @@ export function ExpensesPage() {
         if (!showVoided && expense.voided) return false;
         if (!query) return true;
         return (
-          expense.description.toLowerCase().includes(query) ||
-          expense.category.toLowerCase().includes(query) ||
-          expense.vendor.toLowerCase().includes(query)
+          (expense.description ?? "").toLowerCase().includes(query) ||
+          (expense.category ?? "").toLowerCase().includes(query) ||
+          (expense.vendor ?? "").toLowerCase().includes(query)
         );
       })
       .sort((a, b) => b.ts - a.ts);
@@ -62,8 +62,8 @@ export function ExpensesPage() {
       label: de.description,
       render: (expense) => (
         <div className={`min-w-0 ${expense.voided ? "line-through opacity-60" : ""}`}>
-          <div className="truncate">{expense.description}</div>
-          <div className="muted text-xs">{expense.category}</div>
+          <div className="truncate">{expense.description || "–"}</div>
+          <div className="muted text-xs">{expense.category || "–"}</div>
         </div>
       ),
     },
@@ -184,19 +184,18 @@ function ExpenseFormDialog({
   const [description, setDescription] = useState(expense?.description ?? "");
   const [vendor, setVendor] = useState(expense?.vendor ?? "");
   const [amount, setAmount] = useState(expense ? inputFromCents(expense.amount_cents) : "");
-  const [note, setNote] = useState(expense?.note ?? "");
-  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(expense?.note ?? "");  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const writeId = useWriteId();
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const cents = centsFromInput(amount);
+    const money = parseMoneyInput(amount);
     if (!description.trim() || !category.trim()) {
       setError(de.required);
       return;
     }
-    if (cents <= 0) {
+    if (!money.valid || money.cents <= 0) {
       setError(de.amountPositive);
       return;
     }
@@ -204,7 +203,7 @@ function ExpenseFormDialog({
       category: category.trim(),
       description: description.trim(),
       vendor: vendor.trim(),
-      amount_cents: cents,
+      amount_cents: money.cents,
       note: note.trim(),
     };
     setBusy(true);
