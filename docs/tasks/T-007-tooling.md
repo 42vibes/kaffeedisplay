@@ -53,4 +53,4 @@ release artifacts, without blocking feature work.
 - `.github/workflows/release.yml` and CI size/docs checks; `make check` passes
   locally without IDF (firmware build skipped).
 - `tools/settime.py` and `docs/serial-cli.md`.
-- PR: _to be added_
+- PR: https://github.com/Babo96/kaffeedisplay/pull/5
