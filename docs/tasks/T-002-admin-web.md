@@ -1,6 +1,6 @@
 # T-002 — Admin SPA: all pages + German UI
 
-Status: in-progress
+Status: review
 Track: web
 Owner: web-agent
 Branch: `feat/T-002-web`
@@ -55,4 +55,24 @@ found — coordinate first).
 
 ## Evidence
 
-<!-- PR link, screenshots -->
+- PR: https://github.com/Babo96/kaffeedisplay/pull/6
+- Screenshots: `docs/ui/screenshots/web-*.png`, regenerated with
+  `npm --prefix web run screenshots` (mock + Vite are started by the script).
+- Unit: `npm --prefix web test` — 13 tests (money parse/format, StatCard,
+  BarChart).
+- E2E: `CI=1 npm --prefix web run e2e` — 5 Playwright tests (login/logout,
+  create user, topup, Excel CSV download, 360 px no horizontal overflow).
+- Build: `npm --prefix web run build` — 110.5 KiB gzip total (budget 400 KiB).
+- `make check` green locally; firmware build skipped without `idf.py` (CI job).
+
+### Contract gaps
+
+1. Factory reset has no OpenAPI route. The SPA calls
+   `POST /api/v1/factory-reset` and shows the gap in the UI until T-004 decides
+   the final path.
+2. Report JSON is `additionalProperties: true`. The SPA renders
+   `columns`/`rows`, `sections`, `totals` and `time_quality` generically; the
+   backend/report task must use the same shape or document it in OpenAPI.
+3. `ApStatus` QR fields are plain strings; the SPA handles `data:image/*` as an
+   image and otherwise shows the payload as text.
+
