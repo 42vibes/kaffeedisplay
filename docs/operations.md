@@ -68,33 +68,36 @@ These are admin-only concerns and are not shown on the booking screen.
 ## Build, assets and release
 
 - `make web` builds the admin SPA. `make assets` embeds `web/dist` as
-  deterministic gzip data in the `webassets` component; generated files stay out
-  of git. `make build` runs both.
-- `make fonts` regenerates the LVGL Subset fonts (Inter/Montserrat, German
-  umlauts, `€`, digits, punctuation) with pinned `lv_font_conv@1.5.3` into
-  `firmware/components/ui/generated/`. Sources are pinned and checksummed under
-  `firmware/components/ui/fonts/` (gitignored).
+  deterministic gzip and raw data in the `webassets` component; generated files
+  stay out of git. `make build` runs both.
+- Device fonts are committed by the UI track in
+  `firmware/components/ui/src/fonts/` (Montserrat subsets with German umlauts,
+  `€`, digits and punctuation, generated once with `lv_font_conv@1.5.3`). The
+  ESP-IDF build must not need Node; their README documents regeneration.
 - `make check` runs format, OpenAPI lint, relative-link checks, host/web tests,
   the web build, asset generation and size budgets. On a machine without
   `idf.py` it skips the firmware build; CI/Docker builds the firmware.
 - Releases are built by `.github/workflows/release.yml` from `v*` tags. The
-  GitHub release contains `firmware.bin`, `firmware.bin.sha256`,
-  `manifest.json` (commit, IDF image, web asset sizes, checksums) and a
-  changelog.
+  GitHub release contains `firmware.bin` (OTA app image), `firmware-merged.bin`
+  (flash at offset `0x0`), `SHA256SUMS`, `manifest.json` (commit, IDF image, web
+  asset sizes, checksums) and a changelog. Host tests run in the release job.
 - `make hil` runs the hardware smoke test when a board is at `/dev/ttyUSB0`;
   see `docs/testing.md`.
 
 ## Hardware smoke test
 
 ```sh
-make flash                 # or: python3 tools/hil.py --flash ...
-HIL_ADMIN_PASSWORD='...' make hil
+make flash
+make hil                                        # read-only
+HIL_ALLOW_WRITES=1 HIL_ADMIN_PASSWORD='...' make hil
 ```
 
-The script resets the board, waits for the `Kaffeekasse booting` banner, starts
-the AP over the serial CLI if needed, then exercises login, temp user/product,
-purchase, topup, void and CSV export, and cleans up. It skips clearly when the
-serial port is absent; if the board runs different firmware the boot-banner
+The script does not reset the board or start the AP unless requested with
+`--reset` / `--start-ap`. In write mode it creates a temp user/product, books
+through the serial `book` command, tops up, voids through the serial `void`
+command and exports a report CSV. Cleanup **voids the test events and archives**
+the temp user/product; the append-only audit trail remains. It skips clearly
+when the serial port is absent; if the board runs different firmware the boot
 check fails instead of pretending the test passed.
 
 ## Recovery

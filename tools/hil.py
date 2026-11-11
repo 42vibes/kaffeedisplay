@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """Hardware-in-the-loop smoke test for a connected Kaffeekasse.
 
-Run directly::
+Default mode is read-only: it checks the serial console and, when the admin API
+is reachable, logs in and reads users/products. Ledger writes require an explicit
+opt-in because they create audit-trail events on the real device::
 
-    python3 tools/hil.py --port /dev/ttyUSB0 --password '...'
-    HIL_ADMIN_PASSWORD='...' python3 -m pytest tools/hil.py -q -s
+    python3 tools/hil.py --allow-writes --password '...'
+    HIL_ALLOW_WRITES=1 HIL_ADMIN_PASSWORD='...' python3 -m pytest tools/hil.py -q -s
 
-The script skips with a clear message when the serial port is absent. HTTP
-checks are skipped when neither the AP nor the LAN is reachable; use
-``--base-url`` for a LAN address and ``--no-ap`` to avoid starting the AP.
-
-Requirements: ``pip install -r tools/requirements-tools.txt``.
+The board is not reset and the AP is not started unless requested with
+``--reset`` / ``--start-ap`` (or ``HIL_RESET=1`` / ``HIL_START_AP=1``). The
+script skips with a clear message when the serial port is absent. Requirements:
+``pip install -r tools/requirements-tools.txt``.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -49,6 +51,14 @@ pytestmark = pytest.mark.skipif(
     reason=f"HIL skipped: serial port {PORT} not present (board not connected)",
 )
 
+# IDs are interpolated into a serial command; never allow whitespace or control
+# characters to inject a second command.
+SAFE_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+
+
+def _flag(name: str) -> bool:
+    return os.environ.get(name) == "1"
+
 
 def _serial() -> SerialCli:
     return SerialCli(
@@ -60,7 +70,7 @@ def _serial() -> SerialCli:
 
 
 def _flash() -> None:
-    if os.environ.get("HIL_FLASH") != "1":
+    if not _flag("HIL_FLASH"):
         return
     print("hil: flashing firmware (HIL_FLASH=1)")
     result = subprocess.run(
@@ -83,12 +93,12 @@ def _health(base_url: str) -> requests.Response | None:
 def _ensure_http() -> str:
     """Return a reachable API base URL or skip the HTTP test.
 
-    The AP is off by default. Unless ``HIL_START_AP=0``, ask the serial CLI to
-    start it and wait for the management address to come up.
+    The AP is off by default. It is started over the serial CLI only when
+    ``HIL_START_AP=1`` / ``--start-ap`` is set.
     """
     if _health(BASE_URL) is not None:
         return BASE_URL
-    if os.environ.get("HIL_START_AP", "1") == "1":
+    if _flag("HIL_START_AP"):
         try:
             with _serial() as cli:
                 reply = cli.command("ap start", timeout=5)
@@ -101,7 +111,8 @@ def _ensure_http() -> str:
                 return BASE_URL
             time.sleep(1)
     pytest.skip(
-        f"HIL HTTP checks skipped: no API at {BASE_URL} (join the AP/LAN or set HIL_BASE_URL)"
+        f"HIL HTTP checks skipped: no API at {BASE_URL} (join the AP/LAN, set "
+        "HIL_BASE_URL, or pass --start-ap)"
     )
 
 
@@ -150,54 +161,71 @@ class Api:
             pass
 
 
+def _safe_id(value: str, label: str) -> str:
+    if not SAFE_ID.fullmatch(value):
+        pytest.fail(f"refusing to send unsafe {label} over serial: {value!r}")
+    return value
+
+
 def _parse_event_id(reply: str) -> str:
     parts = reply.split()
-    if len(parts) < 3 or not parts[1] in {"booking", "ok"}:
+    if len(parts) < 3 or parts[1] != "booking":
         raise AssertionError(f"unexpected serial booking reply: {reply!r}")
-    return parts[2]
+    return _safe_id(parts[2], "event id")
 
 
-def _purchase(api: "Api", user_id: str, product_id: str) -> str:
-    """Book through the device UI-equivalent serial command.
-
-    The REST API intentionally has no write endpoint for bookings (bookings are
-    made on the device). HIL therefore uses the documented ``book`` command.
-    """
-    errors: list[str] = []
+def _serial_command(command: str) -> str:
     try:
         with _serial() as cli:
-            reply = cli.command(f"book {user_id} {product_id}", timeout=TIMEOUT)
-        if reply.startswith("OK"):
-            return _parse_event_id(reply)
-        errors.append(f"serial book returned {reply}")
+            return cli.command(command, timeout=TIMEOUT)
     except CliError as exc:
-        errors.append(f"serial book failed: {exc}")
+        raise AssertionError(f"serial command {command!r} failed: {exc}") from exc
 
-    # Forward-compatible fallback if an API-side booking endpoint is added.
-    # The OpenAPI contract has no such route today, so this usually 404s.
+
+def _purchase(user_id: str, product_id: str) -> str:
+    user_id = _safe_id(user_id, "user id")
+    product_id = _safe_id(product_id, "product id")
+    reply = _serial_command(f"book {user_id} {product_id}")
+    if not reply.startswith("OK"):
+        pytest.fail(f"serial book returned {reply!r}")
+    return _parse_event_id(reply)
+
+
+def _void(event_id: str, reason: str, *, strict: bool = True) -> bool:
+    event_id = _safe_id(event_id, "event id")
+    reason = re.sub(r"[\r\n\x00-\x1f]", " ", reason)[:120]
     try:
-        response = api.write(
-            "POST",
-            "/transactions",
-            json={"user_id": user_id, "product_id": product_id},
-        )
-        if response.status_code in (200, 201):
-            return response.json()["id"]
-        errors.append(f"POST /transactions -> {response.status_code}")
-    except requests.RequestException as exc:
-        errors.append(f"POST /transactions failed: {exc}")
-
-    pytest.fail(
-        "purchase failed: the firmware must implement the serial 'book <user_id> "
-        "<product_id>' command for HIL (" + "; ".join(errors) + ")"
-    )
+        reply = _serial_command(f"void {event_id} {reason}")
+    except AssertionError as exc:
+        if strict:
+            raise
+        print(f"hil: void cleanup skipped: {exc}")
+        return False
+    if not reply.startswith("OK"):
+        message = f"serial void returned {reply!r}"
+        if strict:
+            pytest.fail(message)
+        print(f"hil: void cleanup skipped: {message}")
+        return False
+    return True
 
 
 def test_serial_boot_log() -> None:
     _flash()
+    reset = _flag("HIL_RESET")
     try:
         with _serial() as cli:
-            banner, lines = cli.boot_log(timeout=float(os.environ.get("HIL_BOOT_TIMEOUT", "15")))
+            banner, lines = cli.boot_log(
+                timeout=float(os.environ.get("HIL_BOOT_TIMEOUT", "15")), reset=reset
+            )
+            status_reply = ""
+            if banner is None and not reset:
+                # Do not reset implicitly. If the device is already booted, a
+                # read-only status command proves the application is alive.
+                try:
+                    status_reply = cli.command("status")
+                except CliError:
+                    status_reply = ""
     except CliError as exc:
         pytest.fail(str(exc))
 
@@ -205,16 +233,38 @@ def test_serial_boot_log() -> None:
         print("hil: last serial lines:")
         for line in lines[-20:]:
             print(f"  {line}")
-    assert banner, f"no Kaffeekasse boot banner within timeout (port {PORT})"
-    print(f"hil: boot banner: {banner}")
+    if banner:
+        print(f"hil: boot banner: {banner}")
+        return
+    if status_reply.startswith("OK"):
+        pytest.skip("no fresh boot banner without reset; device answered 'status' (use --reset)")
+    pytest.fail(
+        f"no Kaffeekasse boot banner within timeout (port {PORT}); "
+        "pass --reset to reboot the board"
+    )
 
 
-def test_api_smoke(tmp_path: Path) -> None:
+def test_api_read_only() -> None:
+    api = Api(_ensure_http())
+    try:
+        api.login()
+        print(f"hil: logged in to {api.base_url}")
+        for path in ("/health", "/users", "/products", "/stats/summary", "/time"):
+            response = api.read("GET", path)
+            assert response.status_code == 200, f"{path}: {response.status_code} {response.text}"
+        print("hil: read-only API checks passed")
+    finally:
+        api.logout()
+
+
+def test_ledger_smoke(tmp_path: Path) -> None:
+    if not _flag("HIL_ALLOW_WRITES"):
+        pytest.skip("ledger writes disabled (set HIL_ALLOW_WRITES=1 / --allow-writes)")
     api = Api(_ensure_http())
     stamp = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     user_id = product_id = purchase_id = topup_id = ""
     purchase_voided = False
-    keep = os.environ.get("HIL_KEEP") == "1"
+    keep = _flag("HIL_KEEP")
     try:
         api.login()
         print(f"hil: logged in to {api.base_url}")
@@ -242,7 +292,7 @@ def test_api_smoke(tmp_path: Path) -> None:
         assert response.status_code == 201, f"create product: {response.status_code} {response.text}"
         product_id = response.json()["id"]
 
-        purchase_id = _purchase(api, user_id, product_id)
+        purchase_id = _purchase(user_id, product_id)
         print(f"hil: purchase event {purchase_id}")
 
         response = api.write(
@@ -253,29 +303,24 @@ def test_api_smoke(tmp_path: Path) -> None:
         assert response.status_code == 200, f"topup: {response.status_code} {response.text}"
         topup_id = response.json()["id"]
 
-        response = api.read("GET", f"/users/{user_id}/transactions", params={"limit": 20})
-        assert response.status_code == 200, f"history: {response.status_code} {response.text}"
-        events = response.json()
-        ids = {event.get("id") for event in events}
-        assert purchase_id in ids, "purchase event missing from user history"
-        assert topup_id in ids, "topup event missing from user history"
-
         balance = next(
-            (user.get("balance_cents") for user in api.read("GET", "/users").json()
-             if user.get("id") == user_id),
+            (
+                user.get("balance_cents")
+                for user in api.read("GET", "/users").json()
+                if user.get("id") == user_id
+            ),
             None,
         )
         assert balance == 350, f"expected balance 350 after purchase+topup, got {balance}"
 
-        response = api.write(
-            "POST",
-            f"/transactions/{purchase_id}/void",
-            json={"reason": "HIL smoke test"},
-        )
-        assert response.status_code == 200, f"void: {response.status_code} {response.text}"
-        reversal = response.json()
-        assert reversal.get("reverses") == purchase_id, "void did not reference the purchase"
+        _void(purchase_id, "HIL smoke test")
         purchase_voided = True
+        response = api.read("GET", f"/users/{user_id}/transactions", params={"limit": 20})
+        assert response.status_code == 200, f"history: {response.status_code} {response.text}"
+        events = response.json()
+        assert any(event.get("reverses") == purchase_id for event in events), (
+            "void event missing from user history"
+        )
 
         response = api.read(
             "GET",
@@ -293,33 +338,23 @@ def test_api_smoke(tmp_path: Path) -> None:
         csv_path = tmp_path / "hil-report.csv"
         csv_path.write_bytes(body)
         print(f"hil: CSV report saved to {csv_path} ({len(body)} bytes)")
-
-        assert purchase_id
         print("hil: purchase, topup, void and CSV checks passed")
     finally:
         if keep:
-            print("hil: HIL_KEEP=1, leaving test data in place")
+            print("hil: HIL_KEEP=1, leaving test data and events in place")
         else:
+            # The ledger is append-only: cleanup voids the test events and
+            # archives the user/product. The audit trail remains in history.
             if purchase_id and not purchase_voided:
-                response = api.write(
-                    "POST",
-                    f"/transactions/{purchase_id}/void",
-                    json={"reason": "HIL cleanup"},
-                )
-                print(f"hil: cleanup purchase -> {response.status_code}")
+                _void(purchase_id, "HIL cleanup", strict=False)
             if topup_id:
-                response = api.write(
-                    "POST",
-                    f"/transactions/{topup_id}/void",
-                    json={"reason": "HIL cleanup"},
-                )
-                print(f"hil: cleanup topup -> {response.status_code}")
+                _void(topup_id, "HIL cleanup", strict=False)
             if product_id:
                 response = api.write("DELETE", f"/products/{product_id}")
-                print(f"hil: cleanup product -> {response.status_code}")
+                print(f"hil: archive product -> {response.status_code}")
             if user_id:
                 response = api.write("POST", f"/users/{user_id}/archive")
-                print(f"hil: cleanup user -> {response.status_code}")
+                print(f"hil: archive user -> {response.status_code}")
         api.logout()
 
 
@@ -331,9 +366,36 @@ def main() -> int:
     parser.add_argument("--username", default=ADMIN_USER)
     parser.add_argument("--password", default=ADMIN_PASSWORD)
     parser.add_argument("--timeout", type=float, default=TIMEOUT)
-    parser.add_argument("--flash", action="store_true", help="run 'make flash' before testing")
-    parser.add_argument("--no-ap", action="store_true", help="never ask the device to start its AP")
-    parser.add_argument("--keep", action="store_true", help="do not clean up test data")
+    parser.add_argument(
+        "--allow-writes",
+        action="store_true",
+        default=_flag("HIL_ALLOW_WRITES"),
+        help="create/void ledger test data (default: read-only)",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        default=_flag("HIL_RESET"),
+        help="reset the board to capture the boot banner",
+    )
+    parser.add_argument(
+        "--start-ap",
+        action="store_true",
+        default=_flag("HIL_START_AP"),
+        help="ask the device to start its AP",
+    )
+    parser.add_argument(
+        "--flash",
+        action="store_true",
+        default=_flag("HIL_FLASH"),
+        help="run 'make flash' before testing",
+    )
+    parser.add_argument(
+        "--keep",
+        action="store_true",
+        default=_flag("HIL_KEEP"),
+        help="do not void/archive test data",
+    )
     parser.add_argument("--verbose", action="store_true", help="print all serial lines")
     args = parser.parse_args()
 
@@ -344,7 +406,9 @@ def main() -> int:
     if args.password:
         os.environ["HIL_ADMIN_PASSWORD"] = args.password
     os.environ["HIL_TIMEOUT"] = str(args.timeout)
-    os.environ["HIL_START_AP"] = "0" if args.no_ap else "1"
+    os.environ["HIL_ALLOW_WRITES"] = "1" if args.allow_writes else "0"
+    os.environ["HIL_RESET"] = "1" if args.reset else "0"
+    os.environ["HIL_START_AP"] = "1" if args.start_ap else "0"
     os.environ["HIL_FLASH"] = "1" if args.flash else "0"
     os.environ["HIL_KEEP"] = "1" if args.keep else "0"
     if args.verbose:

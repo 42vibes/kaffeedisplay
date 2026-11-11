@@ -39,6 +39,34 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --prefix web
+      - name: Check for e2e suite
+        id: suite
+        shell: bash
+        run: |
+          if [ -f web/playwright.config.ts ] && [ -d tests/e2e ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "e2e suite not present yet (T-002), skipping"
+          fi
+      - name: Install Playwright Chromium
+        if: steps.suite.outputs.present == 'true'
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright
+        if: steps.suite.outputs.present == 'true'
+        run: npm --prefix web run e2e
+
   openapi:
     runs-on: ubuntu-24.04
     steps:

@@ -5,8 +5,7 @@ Host-side helpers. They are not part of the firmware runtime.
 | Tool | Purpose |
 |---|---|
 | `bootstrap.sh` | Verify host tools and install web dependencies. |
-| `embed_web.py` | Deterministic gzip embedding of `web/dist` into `firmware/components/webassets/generated/`. `--check` verifies freshness. |
-| `gen_fonts.py` | Regenerate LVGL fonts with pinned `lv_font_conv@1.5.3`; downloads/verifies pinned Inter and Montserrat TTFs. |
+| `embed_web.py` | Deterministic gzip/raw embedding of `web/dist` into `firmware/components/webassets/generated/`. `--check` verifies freshness. |
 | `hil.py` | pytest/pyserial/requests hardware-in-the-loop smoke test. Skips cleanly when `/dev/ttyUSB0` is absent. |
 | `settime.py` | Set or read the device clock over the serial CLI. |
 | `serial_proto.py` | Line-based serial CLI client shared by `hil.py` and `settime.py`. |
@@ -19,7 +18,6 @@ Host-side helpers. They are not part of the firmware runtime.
 
 ```sh
 make assets      # python3 tools/embed_web.py
-make fonts       # python3 tools/gen_fonts.py
 make tools-deps  # pip install -r tools/requirements-tools.txt
 make hil         # python3 tools/hil.py --port /dev/ttyUSB0
 python3 tools/settime.py --status

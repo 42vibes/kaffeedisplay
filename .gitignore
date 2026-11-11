@@ -37,6 +37,4 @@ __pycache__/
 # Generated assets
 web/dist/
 firmware/main/generated/
-firmware/components/ui/generated/
 firmware/components/webassets/generated/
-firmware/components/ui/fonts/

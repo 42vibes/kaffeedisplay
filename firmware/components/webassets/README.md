@@ -6,19 +6,45 @@ touches `web/dist` directly.
 
 ## Interface
 
-```cpp
-#include "kaffee/web_assets.hpp"
+The generated table matches the adapter expected by
+`firmware/components/api/src/api_assets.cpp` exactly:
 
-const kaffee::web::WebAsset* asset = kaffee::web::find("/");
-const kaffee::web::WebAsset* all = kaffee::web::assets();
-std::size_t count = kaffee::web::asset_count();
+```cpp
+namespace kaffee::api {
+struct Asset {
+    std::string_view path;
+    const char* content_type;
+    std::string_view body;       // raw bytes
+    std::string_view gzip_body;  // gzip bytes, empty only if not generated
+    bool immutable;              // true for hashed /assets/* names
+};
+const Asset* kaffee_web_asset_lookup(std::string_view path);  // nullptr if absent
+}
 ```
 
-`WebAsset` contains `path`, `mime`, gzip `data`, compressed `size`, `gzip`
-(true) and `original_size`. `find()` normalises `/`, trailing slashes, query
-strings and fragments, and returns `nullptr` for unknown paths. The API should
-return `/index.html` (SPA fallback) when `find()` misses and the path has no file
-extension.
+`kaffee/web_assets.hpp` also exposes `kaffee::web::find()`, `assets()` and
+`asset_count()` for tests and non-API consumers. The lookup normalises `/`,
+trailing slashes, query strings and fragments.
+
+`components/main/CMakeLists.txt` already has `webassets` in `REQUIRES`, and
+`main.cpp` references `kaffee::web::assets()` so the SPA is linked even before
+the API adapter is enabled. `strings firmware.bin` therefore contains
+`/assets/index-<hash>.js`.
+
+## API integration
+
+The API branch keeps its adapter behind `KAFFEE_API_WEB_ASSETS`. To enable it:
+
+1. Add `webassets` to the API component's `REQUIRES` (or uncomment the block in
+   `components/api/CMakeLists.txt`) and define `KAFFEE_API_WEB_ASSETS`.
+2. Move the `kaffee_web_asset_lookup()` declaration in `api_assets.cpp` **out of
+   the anonymous namespace** (or include `kaffee/web_assets.hpp`). The generated
+   symbol has external `kaffee::api` linkage; a declaration inside an anonymous
+   namespace will not resolve.
+3. Keep the `Asset` field order/types exactly as above.
+
+Do not copy `web/dist` into the source tree. `tools/embed_web.py` is the only
+producer.
 
 ## Regeneration
 
@@ -28,22 +54,6 @@ make assets       # python3 tools/embed_web.py
 ```
 
 `make build`, `make check` and CI run both automatically. Generated files live in
-`generated/` and are gitignored. On a clean clone without generated assets the
-component links `src/web_assets_stub.cpp` (empty table) so the firmware still
-builds; the warning tells you to run `make assets`.
-
-## API integration
-
-Add the component to the API's `REQUIRES` list (one line, coordinated with the
-API track):
-
-```cmake
-idf_component_register(
-    SRCS "src/api.cpp"
-    INCLUDE_DIRS "include"
-    REQUIRES service esp_http_server app_update webassets
-)
-```
-
-Serve `asset->data` with `Content-Encoding: gzip` when `asset->gzip` is true and
-`Content-Length: asset->size`. Do not cache `index.html`.
+`generated/` and are gitignored. `src/web_assets.cpp` includes
+`generated/web_assets_generated.inc` when present and defines an empty table
+otherwise, so a clean clone always builds.

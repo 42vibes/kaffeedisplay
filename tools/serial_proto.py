@@ -31,6 +31,23 @@ class CliError(RuntimeError):
     """Raised when the serial port cannot be opened or the CLI misses a reply."""
 
 
+SECRET_COMMANDS = {"factory-reset", "password", "admin-password", "wifi-password"}
+SECRET_FIELD = re.compile(r"(?i)\b(password|token|secret|psk)=\S+")
+
+
+def redact_command(command: str) -> str:
+    name = command.split(maxsplit=1)[0].lower()
+    if name in SECRET_COMMANDS or "password" in command.lower():
+        return f"{name} <redacted>"
+    return command
+
+
+def redact_reply(line: str) -> str:
+    if re.match(r"(?i)^OK\s+setup-password\b", line):
+        return "OK setup-password <redacted>"
+    return SECRET_FIELD.sub(r"\1=<redacted>", line)
+
+
 @dataclass
 class SerialCli:
     port: str = DEFAULT_PORT
@@ -76,7 +93,7 @@ class SerialCli:
             raise CliError("serial port is not open")
         self._port.write((command + "\n").encode("utf-8"))  # type: ignore[attr-defined]
         self._port.flush()  # type: ignore[attr-defined]
-        print(f">>> {command}")
+        print(f">>> {redact_command(command)}")
 
     def reset(self, hold_ms: int = 120) -> None:
         """Best-effort ESP32 reset through the CH340 DTR/RTS lines."""
@@ -102,7 +119,7 @@ class SerialCli:
                 continue
             self.log.append(line)
             if self.verbose:
-                print(f"<<< {line}")
+                print(f"<<< {redact_reply(line)}")
             return line
         return None
 
@@ -123,10 +140,13 @@ class SerialCli:
             raise CliError(f"no reply to {command!r} within {timeout or self.timeout:.1f}s")
         return line
 
-    def boot_log(self, timeout: float = 15.0) -> tuple[str | None, list[str]]:
-        """Reset the board and return the first recognised boot banner line."""
+    def boot_log(
+        self, timeout: float = 15.0, reset: bool = False
+    ) -> tuple[str | None, list[str]]:
+        """Read boot output; reset only when explicitly requested."""
         before = len(self.log)
-        self.reset()
+        if reset:
+            self.reset()
         pattern = re.compile(
             r"Kaffeekasse booting|Kaffeekasse.*ready|kaffee:.*boot",
             re.IGNORECASE,

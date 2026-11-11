@@ -68,24 +68,34 @@ When `/dev/ttyUSB0` is present:
 
 ```sh
 make flash
-make hil
+make hil                         # read-only: serial + login + GET checks
+make hil HIL_ALLOW_WRITES=1 HIL_ADMIN_PASSWORD='...'
 # or with a known password / LAN address:
-HIL_ADMIN_PASSWORD='...' HIL_BASE_URL=http://kaffeekasse.local/api/v1 make hil
+HIL_ALLOW_WRITES=1 HIL_ADMIN_PASSWORD='...' \
+  HIL_BASE_URL=http://kaffeekasse.local/api/v1 make hil
 ```
 
 `make hil`:
 
 1. optionally flashes (`HIL_FLASH=1` / `--flash`),
-2. waits for the `Kaffeekasse booting` banner over serial,
-3. starts the AP over the serial CLI unless `HIL_START_AP=0`,
-4. runs the API smoke test (login, create temp user/product, purchase, topup,
-   void, report CSV download),
-5. cleans up the temp user/product and the test events.
+2. reads the serial console (a fresh `Kaffeekasse booting` banner is only
+   expected with `HIL_RESET=1` / `--reset`; otherwise the script accepts a
+   read-only `status` reply as proof the app is alive),
+3. optionally starts the AP over the serial CLI (`HIL_START_AP=1` /
+   `--start-ap`; **off by default**),
+4. logs in and executes read-only checks (`/health`, `/users`, `/products`,
+   `/stats/summary`, `/time`),
+5. only with `HIL_ALLOW_WRITES=1` / `--allow-writes`: creates a temp
+   user/product, books through the serial `book` command, tops up, voids via the
+   serial `void` command and downloads a report CSV.
+
+Cleanup **voids the test events and archives the temp user/product**; the
+append-only ledger keeps the audit trail. Nothing is hard-deleted.
 
 `tools/hil.py` is a pytest module; `python3 -m pytest tools/hil.py -q -s` works
 too. It skips with a clear message when the serial port is absent or the HTTP
-API is unreachable. It fails — never silently skips — when a connected board
-does not run Kaffeekasse firmware.
+API is unreachable. It fails — never silently skips — when a connected board does
+not run Kaffeekasse firmware.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -94,29 +104,33 @@ does not run Kaffeekasse firmware.
 | `HIL_BASE_URL` | `http://192.168.4.1/api/v1` | API base (AP or LAN) |
 | `HIL_ADMIN_USER` | `admin` | admin username |
 | `HIL_ADMIN_PASSWORD` | – | required for HTTP checks |
-| `HIL_START_AP` | `1` | ask the device to start its AP |
+| `HIL_ALLOW_WRITES` | `0` | opt in to ledger-mutating smoke tests |
+| `HIL_RESET` | `0` | reset the board to capture the boot banner |
+| `HIL_START_AP` | `0` | ask the device to start its AP |
 | `HIL_FLASH` | `0` | run `make flash` first |
-| `HIL_KEEP` | `0` | leave temp data for inspection |
+| `HIL_KEEP` | `0` | leave temp data/events for inspection |
 | `HIL_TIMEOUT` | `10` | HTTP timeout in seconds |
 
-The serial protocol and the test-only `book` command are in
+The serial protocol and the test-only `book`/`void` commands are in
 `docs/serial-cli.md`. Install dependencies with `make tools-deps`.
 
 CI cannot reach hardware; firmware build is the required CI gate.
 
-## Assets and fonts
+## Web assets
 
 ```sh
 make web                 # Vite build
-make assets              # deterministic gzip embed -> webassets/generated (gitignored)
+make assets              # deterministic gzip/raw embed -> webassets/generated (gitignored)
 python3 tools/embed_web.py --check
-make fonts               # pinned lv_font_conv@1.5.3 -> ui/generated (gitignored)
 ```
 
 `tools/embed_web.py --check` fails when generated assets are stale. The gzip
-budget is enforced by `tools/check_sizes.py`. Font sources are pinned by URL and
-SHA-256; use `KAFFEE_FONT_DIR=...` and `--offline` for reproducible builds
-without network access.
+budget is enforced by `tools/check_sizes.py`.
+
+Device fonts are committed by the UI track under
+`firmware/components/ui/src/fonts/` and do not need a Node toolchain for the
+firmware build. See that directory's README for the pinned `lv_font_conv`
+regeneration command.
 
 ## Fault injection
 

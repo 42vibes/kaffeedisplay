@@ -28,6 +28,8 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci --prefix web
+      - name: Host tests
+        run: make test-host
       - run: npm --prefix web run typecheck
       - run: npm --prefix web test
       - run: npm --prefix web run build
@@ -61,13 +63,21 @@ jobs:
             -w /project \
             "$IDF_IMAGE" \
             bash -lc '. "$IDF_PATH/export.sh" && idf.py build'
+      - name: Merge flashable image
+        run: |
+          docker run --rm \
+            -v "$PWD/firmware:/project" \
+            -w /project \
+            "$IDF_IMAGE" \
+            bash -lc '. "$IDF_PATH/export.sh" && idf.py merge-bin'
       - name: Collect release files
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release
           cp firmware/build/kaffeekasse.bin release/firmware.bin
-          (cd release && sha256sum firmware.bin > firmware.bin.sha256)
+          cp firmware/build/merged-binary.bin release/firmware-merged.bin
+          (cd release && sha256sum firmware.bin firmware-merged.bin > SHA256SUMS)
           python3 - <<'PY'
           import hashlib
           import json
@@ -75,9 +85,16 @@ jobs:
           from datetime import datetime, timezone
           from pathlib import Path
 
-          binary = Path("release/firmware.bin")
-          digest = hashlib.sha256(binary.read_bytes()).hexdigest()
           web = json.loads(Path("firmware/components/webassets/generated/manifest.json").read_text())
+
+          def artifact(name: str) -> dict:
+              path = Path("release") / name
+              return {
+                  "name": name,
+                  "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                  "bytes": path.stat().st_size,
+              }
+
           manifest = {
               "name": "Kaffeekasse",
               "tag": os.environ["TAG"],
@@ -89,13 +106,11 @@ jobs:
                   "gzip_bytes": web["gzip_bytes"],
                   "original_bytes": web["original_bytes"],
               },
-              "artifacts": [
-                  {
-                      "name": "firmware.bin",
-                      "sha256": digest,
-                      "bytes": binary.stat().st_size,
-                  }
-              ],
+              "artifacts": [artifact("firmware.bin"), artifact("firmware-merged.bin")],
+              "flash_offsets": {
+                  "firmware.bin": "0x20000 (OTA app image)",
+                  "firmware-merged.bin": "0x0 (bootloader + partition table + OTA data + app)",
+              },
           }
           Path("release/manifest.json").write_text(
               json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -143,7 +158,8 @@ jobs:
           body_path: release/CHANGELOG.md
           files: |
             release/firmware.bin
-            release/firmware.bin.sha256
+            release/firmware-merged.bin
+            release/SHA256SUMS
             release/manifest.json
             release/CHANGELOG.md
           fail_on_unmatched_files: true

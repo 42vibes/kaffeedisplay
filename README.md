@@ -22,7 +22,6 @@ make bootstrap    # check toolchains, install web dependencies
 make test         # host unit tests + web unit tests
 make web          # build the admin SPA
 make assets       # embed the SPA into the firmware
-make fonts        # regenerate LVGL fonts (pinned lv_font_conv)
 make build        # build firmware (requires ESP-IDF 5.x or Docker)
 make flash        # flash /dev/ttyUSB0
 make hil          # hardware smoke test (skips without a board)

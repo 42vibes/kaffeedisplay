@@ -1,8 +1,10 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-PORT ?= /dev/ttyUSB0
-IDF_IMAGE ?= espressif/idf:release-v5.5
+ESPPORT ?= /dev/ttyUSB0
+PORT ?= $(ESPPORT)
+IDF_DOCKER_IMAGE ?= espressif/idf:release-v5.5
+IDF_IMAGE ?= $(IDF_DOCKER_IMAGE)
 IDF ?= $(shell command -v idf.py 2>/dev/null)
 NPM ?= npm
 CMAKE ?= cmake
@@ -10,24 +12,23 @@ PYTHON ?= python3
 
 .PHONY: help bootstrap build build-native build-docker flash flash-docker monitor \
 	test test-host test-web test-e2e e2e hil web web-dev mock sim fmt fmt-check \
-	lint docs assets fonts tools-deps check clean
+	lint docs assets tools-deps check clean
 
 help:
 	@echo "Kaffeekasse targets:"
 	@echo "  bootstrap     check tools and install web dependencies"
 	@echo "  build         build firmware (local idf.py or Docker)"
 	@echo "  assets        embed web/dist into the firmware (tools/embed_web.py)"
-	@echo "  fonts         regenerate LVGL fonts (pinned lv_font_conv)"
 	@echo "  flash         flash $(PORT)"
 	@echo "  monitor       serial monitor"
 	@echo "  web           build admin SPA"
 	@echo "  web-dev       Vite + mock API"
-	@echo "  sim           build and run the LVGL simulator"
+	@echo "  sim           build and run the LVGL simulator (provided by T-004)"
 	@echo "  test          host + web tests"
 	@echo "  e2e           Playwright admin UI tests"
 	@echo "  hil           hardware-in-the-loop smoke test ($(PORT))"
 	@echo "  check         format, lint, docs, tests, builds, size budgets"
-	@echo "  fmt           format C++ and TypeScript"
+	@echo "  fmt           clang-format C++; TypeScript is typechecked"
 	@echo "  tools-deps    install Python HIL/lint dependencies"
 	@echo "  clean         remove build output"
 
@@ -35,7 +36,6 @@ bootstrap:
 	@bash tools/bootstrap.sh
 	@$(PYTHON) -c 'import yaml' 2>/dev/null || \
 		echo "warn: PyYAML missing; run 'make tools-deps' for OpenAPI lint/HIL"
-	$(NPM) --prefix web ci
 
 tools-deps:
 	$(PYTHON) -m pip install -r tools/requirements-tools.txt
@@ -48,9 +48,6 @@ web: web/node_modules
 
 assets: web
 	$(PYTHON) tools/embed_web.py
-
-fonts:
-	$(PYTHON) tools/gen_fonts.py
 
 web-dev: web/node_modules
 	@bash -c '$(NPM) --prefix web run mock & MOCK_PID=$$!; trap "kill $$MOCK_PID" EXIT; $(NPM) --prefix web run dev'
@@ -107,13 +104,13 @@ sim:
 
 fmt:
 	@if command -v clang-format >/dev/null; then \
-		find firmware tests/host sim \( -path '*/third_party' -o -path 'firmware/managed_components' -o -path 'firmware/components/webassets/generated' -o -path 'firmware/components/ui/generated' -o -path '*/build' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null | xargs -r clang-format -i; \
+		find firmware tests/host sim \( -path '*/third_party' -o -path 'firmware/managed_components' -o -path 'firmware/components/webassets/generated' -o -path '*/build' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null | xargs -r clang-format -i; \
 	fi
 	$(NPM) --prefix web run typecheck
 
 fmt-check:
 	@if command -v clang-format >/dev/null; then \
-		files=$$(find firmware tests/host sim \( -path '*/third_party' -o -path 'firmware/managed_components' -o -path 'firmware/components/webassets/generated' -o -path 'firmware/components/ui/generated' -o -path '*/build' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null); \
+		files=$$(find firmware tests/host sim \( -path '*/third_party' -o -path 'firmware/managed_components' -o -path 'firmware/components/webassets/generated' -o -path '*/build' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null); \
 		clang-format --dry-run --Werror $$files; \
 	else echo "clang-format not installed, skipping"; fi
 
@@ -130,4 +127,4 @@ check: fmt-check lint docs test web assets
 
 clean:
 	rm -rf firmware/build tests/host/build sim/build web/dist web/node_modules \
-		firmware/components/webassets/generated firmware/components/ui/generated
+		firmware/components/webassets/generated

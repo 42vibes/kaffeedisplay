@@ -2,9 +2,14 @@
 
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "kaffee/web_assets.hpp"
 #include "nvs_flash.h"
 
 extern "C" void app_main(void) {
+    // Keep the embedded admin SPA in the image until the API adapter enables
+    // KAFFEE_API_WEB_ASSETS and references kaffee_web_asset_lookup() itself.
+    (void)kaffee::web::assets();
+
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
