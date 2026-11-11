@@ -50,4 +50,4 @@ Interface: `firmware/components/board/include/kaffee/board.hpp` and
 
 - LVGL 9.6 device UI (3 pages, German, espresso theme) in `firmware/components/ui/`.
 - Host simulator screenshots in `docs/ui/screenshots/`.
-- PR: feat/T-004-ui (opened from this worktree).
+- PR: https://github.com/Babo96/kaffeedisplay/pull/8

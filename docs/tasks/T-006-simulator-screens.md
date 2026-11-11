@@ -40,4 +40,4 @@ show the actual device UI.
 
 - `make sim` / `make screenshots` with LVGL 9.6 + SDL2.
 - Real screenshots committed under `docs/ui/screenshots/` and embedded in `README.md`.
-- PR: feat/T-004-ui (opened from this worktree).
+- PR: https://github.com/Babo96/kaffeedisplay/pull/8
