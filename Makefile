@@ -7,7 +7,7 @@ IDF ?= $(shell command -v idf.py 2>/dev/null)
 NPM ?= npm
 CMAKE ?= cmake
 
-.PHONY: help bootstrap build build-native build-docker flash flash-docker monitor test test-host test-web test-e2e web web-dev mock sim fmt fmt-check lint check clean
+.PHONY: help bootstrap build build-native build-docker flash flash-docker monitor test test-host test-web test-e2e e2e hil web web-dev mock sim fmt fmt-check lint check clean
 
 help:
 	@echo "Kaffeekasse targets:"
@@ -52,6 +52,11 @@ test: test-host test-web
 
 test-e2e: web/node_modules
 	$(NPM) --prefix web run e2e
+
+e2e: test-e2e
+
+hil:
+	python3 tools/hil.py --port $(PORT)
 
 build-native:
 	@if [ -z "$(IDF)" ]; then echo "idf.py not found; use 'make build-docker' or install ESP-IDF 5.5"; exit 1; fi

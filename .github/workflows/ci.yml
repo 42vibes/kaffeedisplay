@@ -56,6 +56,7 @@ jobs:
         shell: bash
         run: |
           git config --global --add safe.directory '*'
+          . "$IDF_PATH/export.sh"
           cd firmware
           idf.py build
       - uses: actions/upload-artifact@v4

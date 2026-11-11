@@ -720,7 +720,8 @@ components:
     RequestId:
       name: X-Request-Id
       in: header
-      required: false
+      required: true
+      description: Stable UUID per logical write; retries must reuse it.
       schema: { type: string, maxLength: 64 }
   responses:
     BadRequest:
@@ -759,6 +760,7 @@ components:
       type: object
       properties:
         username: { type: string }
+        csrf_token: { type: string, description: Send as X-CSRF-Token on writes. }
         expires_at: { type: integer, format: int64 }
     User:
       type: object
@@ -810,9 +812,18 @@ components:
         type: { type: string }
         user_id: { type: string }
         user_name: { type: string }
+        user_color: { type: string }
         product_id: { type: string }
         product_name: { type: string }
         product_category: { type: string }
+        product_icon: { type: string }
+        product_color: { type: string }
+        expense_id: { type: string }
+        expense_category: { type: string }
+        expense_description: { type: string }
+        expense_vendor: { type: string }
+        counted_cents: { type: integer, format: int64 }
+        expected_cents: { type: integer, format: int64 }
         unit_amount_cents: { type: integer, format: int64 }
         amount_cents: { type: integer, format: int64 }
         payment: { type: string, enum: [balance, cash, ''] }
@@ -896,10 +907,12 @@ components:
           type: object
           properties:
             ap_ssid: { type: string }
+            ap_password: { type: string, writeOnly: true, description: Empty keeps the stored secret. }
             ap_window_s: { type: integer }
             hostname: { type: string }
             sta_enabled: { type: boolean }
             sta_ssid: { type: string }
+            sta_password: { type: string, writeOnly: true, description: Empty keeps the stored secret. }
             napt_enabled: { type: boolean }
         time:
           type: object
@@ -929,7 +942,7 @@ components:
         active: { type: boolean }
         remaining_seconds: { type: integer }
         ssid: { type: string }
-        password: { type: string }
+        password: { type: string, description: Empty while the AP is inactive. }
         ip: { type: string }
         url: { type: string }
         wifi_qr: { type: string }
@@ -949,4 +962,5 @@ components:
         mac: { type: string }
         network: { type: object, additionalProperties: true }
         time: { $ref: '#/components/schemas/TimeInfo' }
+        last_backup_at: { type: integer, format: int64 }
         drinks_today: { type: integer }

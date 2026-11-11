@@ -1,5 +1,6 @@
 #include <doctest.h>
 
+#include <algorithm>
 #include <memory>
 #include <vector>
 
@@ -10,6 +11,10 @@
 using namespace kaffee;
 
 namespace {
+
+Timestamp f_now() {
+    return 1'700'000'000;
+}
 
 struct Fixture {
     Ledger ledger;
@@ -42,6 +47,71 @@ struct Fixture {
             .product_id;
     }
 };
+
+TEST_CASE("invalid mutation is rejected before persistence") {
+    Fixture f;
+    auto u = f.user("Ada");
+    auto p = f.product("Kaffee", 50);
+    f.must(f.ledger.archive_user(u, "arch", f.now, TimeSource::Synced));
+    const size_t persisted_before = f.persisted.size();
+    auto failed = f.ledger.purchase(u, p, "blocked", f.now, TimeSource::Synced);
+    CHECK_FALSE(static_cast<bool>(failed));
+    CHECK(f.persisted.size() == persisted_before);
+    CHECK(f.ledger.events().back().type == EventType::UserArchived);
+}
+
+TEST_CASE("leaderboard void outside period does not go negative") {
+    Fixture f;
+    auto u = f.user("Ada");
+    auto p = f.product("Kaffee", 50);
+    Timestamp october = 1'697'000'000;
+    Timestamp november = october + 31 * 86400;
+    auto sale = f.must(f.ledger.purchase(u, p, "p", october, TimeSource::Synced));
+    f.must(f.ledger.void_event(sale.id, "late correction", "v", november, TimeSource::Synced));
+    auto oct = f.ledger.leaderboard(october - 86400, october + 86400);
+    auto nov = f.ledger.leaderboard(november - 86400, november + 86400);
+    CHECK(oct.entries[0].count == 1);
+    CHECK(nov.entries[0].count == 0);
+    CHECK(nov.guest_count == 0);
+}
+
+TEST_CASE("generated ids are 64-bit and unique") {
+    Ledger ledger;
+    std::vector<std::string> ids;
+    for (int i = 0; i < 200; ++i) {
+        auto e =
+            ledger.create_user("U" + std::to_string(i), "#fff", "", f_now(), TimeSource::Synced);
+        REQUIRE(static_cast<bool>(e));
+        ids.push_back(e.value->user_id);
+        CHECK(e.value->user_id.size() == std::string("usr_").size() + 16);
+    }
+    std::sort(ids.begin(), ids.end());
+    CHECK(std::adjacent_find(ids.begin(), ids.end()) == ids.end());
+}
+
+TEST_CASE("void actor is preserved") {
+    Fixture f;
+    auto u = f.user("Ada");
+    auto p = f.product("Kaffee", 50);
+    auto sale = f.must(f.ledger.purchase(u, p, "p", f.now, TimeSource::Synced));
+    auto undo = f.must(f.ledger.void_event(sale.id, "undo", "v", f.now, TimeSource::Synced, "ui"));
+    CHECK(undo.actor == "ui");
+}
+
+TEST_CASE("topup and guest sale voids reverse cash") {
+    Fixture f;
+    auto u = f.user("Ada");
+    auto p = f.product("Kaffee", 50);
+    auto top = f.must(f.ledger.topup(u, 500, "cash", "t", f.now, TimeSource::Synced));
+    auto guest = f.must(f.ledger.guest_sale(p, "g", f.now, TimeSource::Synced));
+    CHECK(f.ledger.summary().cash_expected == 550);
+    f.must(f.ledger.void_event(top.id, "no cash", "vt", f.now, TimeSource::Synced));
+    f.must(f.ledger.void_event(guest.id, "no guest", "vg", f.now, TimeSource::Synced));
+    CHECK(f.ledger.summary().cash_expected == 0);
+    CHECK(f.ledger.summary().topups == 0);
+    CHECK(f.ledger.summary().guest_sales == 0);
+    CHECK(f.ledger.balance(u) == 0);
+}
 
 }  // namespace
 

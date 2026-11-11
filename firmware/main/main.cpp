@@ -1,6 +1,7 @@
 #include <cstdio>
 
 #include "esp_log.h"
+#include "esp_ota_ops.h"
 #include "nvs_flash.h"
 
 extern "C" void app_main(void) {
@@ -12,4 +13,7 @@ extern "C" void app_main(void) {
     ESP_ERROR_CHECK(err);
     ESP_LOGI("kaffee", "Kaffeekasse booting: skeleton build");
     std::printf("Kaffeekasse skeleton\n");
+    // A future health check runs before this point; for the skeleton, a clean
+    // boot is enough to cancel rollback of the running image.
+    esp_ota_mark_app_valid_cancel_rollback();
 }

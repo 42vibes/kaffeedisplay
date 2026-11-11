@@ -40,7 +40,8 @@ for the duration of the admin window, but never to the internet.
 - Admin functions are not reachable from the booking UI.
 - Undo is limited to the last member booking for 8 s. Guest cash sales have no
   undo.
-- Display test/rotation changes require the admin web or page 3 long-press.
+- Display test/rotation/brightness changes are admin-web only. Page 3 shows
+  them read-only; its only control is the AP start/stop long-press.
 
 ## Data
 

@@ -20,7 +20,8 @@ The Kaffeekasse is a **post-pay tab** for members plus **cash sales for guests**
 
 ```
 balance(user)  = Σ events.amount_cents for user
-cash_expected  = topups + guest_sales − expenses + void_effects
+cash_expected  = topups + guest_sales − expenses
+                 (voids are included in each sum with the opposite sign)
 prepaid        = Σ max(balance, 0)
 debts          = Σ max(−balance, 0)
 net_liabilities = prepaid − debts

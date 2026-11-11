@@ -42,7 +42,7 @@ export function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{de.dashboard}</h1>
           <p className="muted mt-1 text-sm">
-            {device ? `Firmware ${device.firmware_version} · ${device.mac}` : de.loading}
+            {device ? `${de.firmware} ${device.firmware_version} · ${device.mac}` : de.loading}
           </p>
         </div>
         {timeWarning ? (
@@ -108,23 +108,23 @@ export function DashboardPage() {
           <h2 className="font-medium">{de.system}</h2>
           <dl className="mt-4 space-y-2 text-sm">
             <div className="flex justify-between gap-4">
-              <dt className="muted">Uptime</dt>
+              <dt className="muted">{de.uptime}</dt>
               <dd className="mono">{device ? `${Math.floor(device.uptime_s / 3600)} h` : "–"}</dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="muted">Freier Heap</dt>
+              <dt className="muted">{de.freeHeap}</dt>
               <dd className="mono">
                 {device ? `${Math.round(device.free_heap / 1024)} KB` : "–"}
               </dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="muted">Chip-Temperatur</dt>
+              <dt className="muted">{de.chipTemp}</dt>
               <dd className="mono">
                 {device?.temperature_valid ? `${device.temperature_c.toFixed(1)} °C` : "–"}
               </dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="muted">Zeitquelle</dt>
+              <dt className="muted">{de.timeSource}</dt>
               <dd>{device?.time.last_source || "–"}</dd>
             </div>
           </dl>

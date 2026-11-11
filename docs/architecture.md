@@ -60,7 +60,7 @@
 ## Persistence model
 
 - Append-only `journal.jsonl` + `snapshot.a.json` / `snapshot.b.json`.
-- Every event has sequence number, CRC/JSON validity, SHA-256 hash and previous
+- Every event has a sequence number, valid JSON, a SHA-256 hash and the previous
   hash. Boot stops at the first invalid line and quarantines the tail.
 - Snapshot stores the full event list up to `last_seq`; compaction is periodic.
 - No balance is stored as truth; all balances derive from events.

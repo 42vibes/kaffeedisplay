@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string>
 
+#include "kaffee/fwd.hpp"
+
 namespace kaffee {
 
 struct DisplaySettings {

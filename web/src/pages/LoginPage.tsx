@@ -18,7 +18,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: Session) => void }) 
     } catch (err) {
       setError(
         err instanceof ApiRequestError && err.status === 401
-          ? "Passwort falsch."
+          ? de.wrongPassword
           : de.loginFailed,
       );
     } finally {

@@ -30,7 +30,9 @@ export function formatMonth(seconds: number): string {
 }
 
 export function centsFromInput(value: string): number {
-  const normalized = value.replace(",", ".").trim();
+  let normalized = value.trim().replace(/\s/g, "");
+  // German thousands separator: 1.234,56 -> 1234.56
+  normalized = normalized.replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".");
   if (!normalized) return 0;
   const parsed = Number.parseFloat(normalized);
   if (Number.isNaN(parsed)) return 0;

@@ -5,14 +5,14 @@ device UI without hardware.
 
 | Page 1 — booking | Page 1 — selected |
 |---|---|
-| ![Idle](docs/ui/screenshots/01-idle.png) | ![User selected](docs/ui/screenshots/02-user-selected.png) |
+| ![Idle](01-idle.png) | ![User selected](02-user-selected.png) |
 
 | Booking toast | Page 2 — leaderboard |
 |---|---|
-| ![Booking](docs/ui/screenshots/03-booking-toast.png) | ![Leaderboard](docs/ui/screenshots/04-leaderboard.png) |
+| ![Booking](03-booking-toast.png) | ![Leaderboard](04-leaderboard.png) |
 
 | Page 3 — system / AP QR |
 |---|
-| ![System](docs/ui/screenshots/05-system-ap-qr.png) |
+| ![System](05-system-ap-qr.png) |
 
 Admin web screenshots are added with the web feature PR.

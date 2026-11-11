@@ -8,9 +8,10 @@
 #include <string_view>
 #include <vector>
 
+#include "kaffee/fwd.hpp"
+
 namespace kaffee {
 
-using Cents = int64_t;
 using Timestamp = int64_t;  // Unix seconds, UTC
 
 enum class TimeSource { Synced, Restored, Unset };
@@ -222,7 +223,7 @@ class Ledger {
     Result<Event> adjust(std::string user_id, Cents amount_cents, std::string note,
                          std::string request_id, Timestamp ts, TimeSource source);
     Result<Event> void_event(std::string event_id, std::string reason, std::string request_id,
-                             Timestamp ts, TimeSource source);
+                             Timestamp ts, TimeSource source, std::string actor = "admin");
 
     Result<Event> add_expense(std::string category, std::string description, std::string vendor,
                               Cents amount_cents, std::string note, std::string request_id,
@@ -313,8 +314,7 @@ class Ledger {
 
     // Builds, persists and applies a new event.
     Result<Event> commit_event(Event event, std::string request_id);
-    void apply_to_state(const Event& event);
-    void rebuild_indexes();
+    Result<Unit> validate_event(const Event& event) const;
 };
 
 std::string default_id(std::string_view prefix);

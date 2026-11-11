@@ -1,6 +1,7 @@
 #include "kaffee/domain.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <random>
 
@@ -19,9 +20,9 @@ bool contains(const std::vector<std::string>& v, const std::string& value) {
 }
 
 std::string compact_id(std::string_view prefix, uint64_t value) {
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "%.*s_%08llx", static_cast<int>(prefix.size()), prefix.data(),
-                  static_cast<unsigned long long>(value & 0xffffffffull));
+    char buf[40];
+    std::snprintf(buf, sizeof(buf), "%.*s_%016llx", static_cast<int>(prefix.size()), prefix.data(),
+                  static_cast<unsigned long long>(value));
     return buf;
 }
 
@@ -29,7 +30,8 @@ std::string compact_id(std::string_view prefix, uint64_t value) {
 
 std::string default_id(std::string_view prefix) {
     static thread_local std::mt19937_64 rng{std::random_device{}()};
-    return compact_id(prefix, rng());
+    static std::atomic<uint64_t> counter{0};
+    return compact_id(prefix, rng() ^ (counter.fetch_add(1) * 0x9e3779b97f4a7c15ull));
 }
 
 Ledger::Ledger() : id_fn_([](std::string_view prefix) { return default_id(prefix); }) {}
@@ -145,6 +147,8 @@ Result<Event> Ledger::commit_event(Event event, std::string request_id) {
     if (event.seq == 0) event.seq = next_seq_;
     event.prev_hash = head_hash_;
     event.hash = make_event_hash(event);
+    auto valid = validate_event(event);
+    if (!valid) return Result<Event>::fail(valid.error->code, valid.error->message);
     if (commit_hook_.fn) {
         auto persisted = commit_hook_.fn(event);
         if (!persisted) return Result<Event>::fail(persisted.error->code, persisted.error->message);
@@ -154,20 +158,7 @@ Result<Event> Ledger::commit_event(Event event, std::string request_id) {
     return Result<Event>::ok(event);
 }
 
-Result<Unit> Ledger::apply(const Event& event) {
-    if (event.seq != next_seq_) {
-        return Result<Unit>::fail("seq", "unexpected event sequence");
-    }
-    if (event.id.empty()) return Result<Unit>::fail("id", "event id is empty");
-    if (event_index_.count(event.id))
-        return Result<Unit>::fail("duplicate", "event already applied");
-    if (event.prev_hash != head_hash_) {
-        return Result<Unit>::fail("chain", "hash chain is broken");
-    }
-    if (event.hash != make_event_hash(event)) {
-        return Result<Unit>::fail("hash", "event hash mismatch");
-    }
-
+Result<Unit> Ledger::validate_event(const Event& event) const {
     // Validate everything that can fail before mutating state.
     switch (event.type) {
         case EventType::UserCreated:
@@ -273,6 +264,26 @@ Result<Unit> Ledger::apply(const Event& event) {
         default:
             return Result<Unit>::fail("type", "unknown event type");
     }
+
+    return Result<Unit>::ok(Unit{});
+}
+
+Result<Unit> Ledger::apply(const Event& event) {
+    if (event.seq != next_seq_) {
+        return Result<Unit>::fail("seq", "unexpected event sequence");
+    }
+    if (event.id.empty()) return Result<Unit>::fail("id", "event id is empty");
+    if (event_index_.count(event.id))
+        return Result<Unit>::fail("duplicate", "event already applied");
+    if (event.prev_hash != head_hash_) {
+        return Result<Unit>::fail("chain", "hash chain is broken");
+    }
+    if (event.hash != make_event_hash(event)) {
+        return Result<Unit>::fail("hash", "event hash mismatch");
+    }
+
+    auto valid = validate_event(event);
+    if (!valid) return valid;
 
     switch (event.type) {
         case EventType::UserCreated: {
@@ -687,7 +698,7 @@ Result<Event> Ledger::adjust(std::string user_id, Cents amount_cents, std::strin
 }
 
 Result<Event> Ledger::void_event(std::string event_id, std::string reason, std::string request_id,
-                                 Timestamp ts, TimeSource source) {
+                                 Timestamp ts, TimeSource source, std::string actor) {
     auto it = event_index_.find(event_id);
     if (it == event_index_.end()) return fail("event", "unknown event");
     const Event& orig = events_[it->second];
@@ -703,7 +714,7 @@ Result<Event> Ledger::void_event(std::string event_id, std::string reason, std::
     e.type = EventType::Void;
     e.ts = ts;
     e.time_source = source;
-    e.actor = "admin";
+    e.actor = std::move(actor);
     e.user_id = orig.user_id;
     e.user_name = orig.user_name;
     e.user_color = orig.user_color;
@@ -898,6 +909,10 @@ Leaderboard Ledger::leaderboard(Timestamp from, Timestamp to) const {
         } else if (e.type == EventType::Void) {
             auto original = find_event(e.reverses);
             if (!original) continue;
+            // Count the correction in the period of the original booking, not
+            // the period of the void. A void in a later month must not make
+            // that month's leaderboard negative.
+            if (original->ts < from || original->ts >= to) continue;
             if (original->type == EventType::Purchase) {
                 auto& entry = entries[original->user_id];
                 entry.user_id = original->user_id;

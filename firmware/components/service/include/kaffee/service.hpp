@@ -9,41 +9,9 @@
 
 #include "kaffee/domain.hpp"
 #include "kaffee/settings.hpp"
+#include "kaffee/storage.hpp"
 
 namespace kaffee {
-
-struct StorageInfo {
-    uint64_t used_bytes = 0;
-    uint64_t total_bytes = 0;
-    uint32_t event_count = 0;
-    bool mounted = false;
-    bool degraded = false;
-};
-
-// Persistence boundary. Implemented by LittleFS on the device and by a
-// file-backed store on the host. All methods are called through KaffeeService
-// with its write mutex held.
-class IEventStore {
-  public:
-    virtual ~IEventStore() = default;
-    virtual Result<Unit> mount() = 0;
-    // Replays snapshot + journal into the ledger. Returns the number of events
-    // applied and whether the journal tail had to be quarantined.
-    virtual Result<uint32_t> load(Ledger& ledger) = 0;
-    virtual Result<Unit> append(const Event& event) = 0;
-    virtual Result<Unit> write_snapshot(const Ledger& ledger) = 0;
-    virtual Result<Unit> compact(const Ledger& ledger) = 0;
-    virtual Result<Unit> factory_reset() = 0;
-    virtual StorageInfo info() const = 0;
-};
-
-class ISettingsStore {
-  public:
-    virtual ~ISettingsStore() = default;
-    virtual Result<Settings> load() = 0;
-    virtual Result<Unit> save(const Settings& settings) = 0;
-    virtual Result<Unit> reset() = 0;
-};
 
 struct NetworkStatus {
     bool ap_active = false;
@@ -78,6 +46,7 @@ struct SystemStats {
     std::string mac;
     NetworkStatus network;
     TimeInfo time;
+    Timestamp last_backup_at = 0;
     int drinks_today = 0;
 };
 
@@ -88,6 +57,7 @@ class IPlatform {
     virtual ~IPlatform() = default;
     virtual SystemStats stats() const = 0;
     virtual TimeInfo time_info() const = 0;
+    virtual uint64_t random_u64() = 0;
     virtual Result<Unit> sync_time(Timestamp epoch_seconds, const std::string& source) = 0;
 
     virtual NetworkStatus network_status() const = 0;
@@ -105,6 +75,7 @@ class IPlatform {
 
 struct Session {
     std::string token;
+    std::string csrf_token;
     Timestamp created_at = 0;
     Timestamp expires_at = 0;
 };
@@ -133,6 +104,10 @@ class IUiBackend {
     virtual Result<Unit> start_ap() = 0;
     virtual Result<Unit> stop_ap() = 0;
     virtual Result<Unit> extend_ap(int seconds) = 0;
+    virtual AppSettings app_settings() const = 0;
+    // Device-side undo of the most recent member booking (actor "ui").
+    virtual Result<Event> undo_booking(const std::string& event_id,
+                                       const std::string& request_id) = 0;
     virtual void set_change_callback(ChangeCallback callback) = 0;
     virtual void refresh() = 0;
 };
@@ -189,6 +164,8 @@ class KaffeeService : public IUiBackend {
                                  const std::string& note, const std::string& request_id) = 0;
     virtual Result<Event> void_event(const std::string& event_id, const std::string& reason,
                                      const std::string& request_id) = 0;
+    virtual Result<Event> undo_booking(const std::string& event_id,
+                                       const std::string& request_id) = 0;
     virtual Result<Event> add_expense(const std::string& category, const std::string& description,
                                       const std::string& vendor, Cents amount_cents,
                                       const std::string& note, const std::string& request_id) = 0;
@@ -210,9 +187,13 @@ class KaffeeService : public IUiBackend {
                                   const std::string& client_ip) = 0;
     virtual Result<Unit> logout(const std::string& token) = 0;
     virtual Result<Session> validate_session(const std::string& token) = 0;
+    virtual bool validate_csrf(const std::string& token, const std::string& csrf) = 0;
     virtual Result<Unit> change_admin_password(const std::string& current_password,
                                                const std::string& new_password,
                                                const std::string& request_id) = 0;
+    virtual bool must_change_admin_password() const = 0;
+    // Plaintext initial password, available only until it has been changed.
+    virtual std::string setup_password() const = 0;
 
     // --- Settings / time / AP ---
     virtual Settings settings() const = 0;

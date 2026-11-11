@@ -30,7 +30,8 @@ make check        # everything CI runs
 The board is normally at `/dev/ttyUSB0` (CH340). Flashing from Docker:
 
 ```sh
-make flash-docker
+make build-docker
+make flash
 ```
 
 ## Documentation

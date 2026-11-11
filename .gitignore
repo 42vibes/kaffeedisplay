@@ -12,6 +12,7 @@ web/node_modules/
 web/.vite/
 web/playwright-report/
 web/test-results/
+*.tsbuildinfo
 firmware/main/web_assets/
 coverage/
 *.bin

@@ -55,7 +55,7 @@ It must generate deterministic screenshots into `docs/ui/screenshots/`:
 ```
 01-idle.png
 02-user-selected.png
-03-round-toast.png
+03-booking-toast.png
 04-leaderboard.png
 05-system-ap-qr.png
 ```

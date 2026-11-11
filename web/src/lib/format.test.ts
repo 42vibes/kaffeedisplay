@@ -10,6 +10,7 @@ describe("money formatting", () => {
   it("parses German decimal input", () => {
     expect(centsFromInput("1,50")).toBe(150);
     expect(centsFromInput("0.50")).toBe(50);
+    expect(centsFromInput("1.234,56")).toBe(123456);
     expect(centsFromInput("")).toBe(0);
   });
 

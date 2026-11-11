@@ -25,7 +25,7 @@ function uuid(): string {
 
 async function request<T>(
   path: string,
-  options: RequestInit & { skipCsrf?: boolean } = {},
+  options: RequestInit & { skipCsrf?: boolean; requestId?: string } = {},
 ): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
@@ -33,7 +33,7 @@ async function request<T>(
     headers.set("Content-Type", "application/json");
   }
   if (csrfToken && !options.skipCsrf) headers.set("X-CSRF-Token", csrfToken);
-  headers.set("X-Request-Id", uuid());
+  headers.set("X-Request-Id", options.requestId ?? uuid());
 
   const response = await fetch(`${BASE}${path}`, {
     ...options,
