@@ -1,0 +1,7 @@
+# Host tools for HIL, clock setting and linting.
+# Python >= 3.11. Install with:
+#   python3 -m pip install -r tools/requirements-tools.txt
+pytest==9.1.1
+pyserial==3.5
+requests==2.34.2
+PyYAML==6.0.3

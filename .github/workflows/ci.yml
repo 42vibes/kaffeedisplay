@@ -31,13 +31,26 @@ jobs:
       - run: npm --prefix web run build
       - name: Size budget
         run: python3 tools/check_sizes.py
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 1
+          if-no-files-found: error
 
   openapi:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -m pip install --user pyyaml
+      - run: python3 -m pip install --user PyYAML==6.0.3
       - run: python3 tools/lint_openapi.py docs/api/openapi.yaml
+
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/check_docs.py
 
   format:
     runs-on: ubuntu-24.04
@@ -48,17 +61,27 @@ jobs:
 
   firmware:
     runs-on: ubuntu-24.04
-    container:
-      image: espressif/idf:release-v5.5
+    needs: web
     steps:
       - uses: actions/checkout@v4
-      - name: Build firmware
-        shell: bash
+      - name: Download web build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+      - name: Embed web assets
         run: |
-          git config --global --add safe.directory '*'
-          . "$IDF_PATH/export.sh"
-          cd firmware
-          idf.py build
+          python3 tools/embed_web.py
+          python3 tools/embed_web.py --check
+      - name: Build firmware
+        run: |
+          docker run --rm \
+            -v "$PWD/firmware:/project" \
+            -w /project \
+            espressif/idf:release-v5.5 \
+            bash -lc '. "$IDF_PATH/export.sh" && idf.py build'
+      - name: Firmware and bundle size budgets
+        run: python3 tools/check_sizes.py
       - uses: actions/upload-artifact@v4
         with:
           name: firmware

@@ -54,7 +54,8 @@ for the duration of the admin window, but never to the internet.
 
 ## Recovery
 
-- Serial CLI (`status`, `time set`, `backup`, `factory-reset`) requires physical
-  access; destructive commands require the admin password.
+- Serial CLI (`status`, `time set`, `backup`, `book`, `factory-reset`) requires
+  physical access; destructive commands require the admin password. Protocol:
+  `docs/serial-cli.md`.
 - Boot loop safety: after 3 consecutive crashes, start AP-only diagnostics mode
   and expose logs over the local web.

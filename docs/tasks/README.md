@@ -11,7 +11,7 @@ file as you work; put the PR link under Evidence when done.
 | T-004 | HTTP API, auth, AP/time, backup/OTA | backend | T-001 | – | blocked on T-001 |
 | T-005 | Reports + Excel CSV backend | backend | T-001 | – | blocked on T-001 |
 | T-006 | LVGL simulator + screenshots + README | ui | T-003 | – | blocked on T-003 |
-| T-007 | HIL tools, fonts/assets, release pipeline | qa | foundation | – | ready |
+| T-007 | HIL tools, fonts/assets, release pipeline | qa | foundation | T-007 tooling agent | review |
 
 ## Workflow
 

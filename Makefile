@@ -6,32 +6,51 @@ IDF_IMAGE ?= espressif/idf:release-v5.5
 IDF ?= $(shell command -v idf.py 2>/dev/null)
 NPM ?= npm
 CMAKE ?= cmake
+PYTHON ?= python3
 
-.PHONY: help bootstrap build build-native build-docker flash flash-docker monitor test test-host test-web test-e2e e2e hil web web-dev mock sim fmt fmt-check lint check clean
+.PHONY: help bootstrap build build-native build-docker flash flash-docker monitor \
+	test test-host test-web test-e2e e2e hil web web-dev mock sim fmt fmt-check \
+	lint docs assets fonts tools-deps check clean
 
 help:
 	@echo "Kaffeekasse targets:"
 	@echo "  bootstrap     check tools and install web dependencies"
 	@echo "  build         build firmware (local idf.py or Docker)"
+	@echo "  assets        embed web/dist into the firmware (tools/embed_web.py)"
+	@echo "  fonts         regenerate LVGL fonts (pinned lv_font_conv)"
 	@echo "  flash         flash $(PORT)"
 	@echo "  monitor       serial monitor"
 	@echo "  web           build admin SPA"
 	@echo "  web-dev       Vite + mock API"
 	@echo "  sim           build and run the LVGL simulator"
 	@echo "  test          host + web tests"
-	@echo "  check         format, lint, tests, builds, size budgets"
+	@echo "  e2e           Playwright admin UI tests"
+	@echo "  hil           hardware-in-the-loop smoke test ($(PORT))"
+	@echo "  check         format, lint, docs, tests, builds, size budgets"
 	@echo "  fmt           format C++ and TypeScript"
+	@echo "  tools-deps    install Python HIL/lint dependencies"
 	@echo "  clean         remove build output"
 
 bootstrap:
 	@bash tools/bootstrap.sh
+	@$(PYTHON) -c 'import yaml' 2>/dev/null || \
+		echo "warn: PyYAML missing; run 'make tools-deps' for OpenAPI lint/HIL"
 	$(NPM) --prefix web ci
+
+tools-deps:
+	$(PYTHON) -m pip install -r tools/requirements-tools.txt
 
 web/node_modules: web/package-lock.json
 	$(NPM) --prefix web ci
 
 web: web/node_modules
 	$(NPM) --prefix web run build
+
+assets: web
+	$(PYTHON) tools/embed_web.py
+
+fonts:
+	$(PYTHON) tools/gen_fonts.py
 
 web-dev: web/node_modules
 	@bash -c '$(NPM) --prefix web run mock & MOCK_PID=$$!; trap "kill $$MOCK_PID" EXIT; $(NPM) --prefix web run dev'
@@ -56,29 +75,30 @@ test-e2e: web/node_modules
 e2e: test-e2e
 
 hil:
-	python3 tools/hil.py --port $(PORT)
+	$(PYTHON) tools/hil.py --port $(PORT)
 
-build-native:
+build-native: assets
 	@if [ -z "$(IDF)" ]; then echo "idf.py not found; use 'make build-docker' or install ESP-IDF 5.5"; exit 1; fi
 	cd firmware && idf.py build
 
-build-docker: web
-	mkdir -p firmware/main/web_assets
-	rm -rf firmware/main/web_assets/*
-	cp -r web/dist/* firmware/main/web_assets/
-	docker run --rm -v "$(CURDIR)/firmware:/project" -w /project $(IDF_IMAGE) idf.py build
+build-docker: assets
+	docker run --rm -v "$(CURDIR)/firmware:/project" -w /project $(IDF_IMAGE) \
+		bash -lc '. $$IDF_PATH/export.sh && idf.py build'
 
-build: web
-	mkdir -p firmware/main/web_assets
-	rm -rf firmware/main/web_assets/*
-	cp -r web/dist/* firmware/main/web_assets/
-	@if [ -n "$(IDF)" ]; then cd firmware && idf.py build; else echo "idf.py not found, using Docker"; $(MAKE) build-docker; fi
+build:
+	@if [ -n "$(IDF)" ]; then $(MAKE) build-native; else $(MAKE) build-docker; fi
 
 flash:
-	@if [ -n "$(IDF)" ]; then cd firmware && idf.py -p $(PORT) flash; else docker run --rm -v "$(CURDIR)/firmware:/project" -w /project --device=$(PORT) $(IDF_IMAGE) idf.py -p $(PORT) flash; fi
+	@if [ -n "$(IDF)" ]; then cd firmware && idf.py -p $(PORT) flash; else \
+		docker run --rm -v "$(CURDIR)/firmware:/project" -w /project --device=$(PORT) \
+			$(IDF_IMAGE) bash -lc '. $$IDF_PATH/export.sh && idf.py -p $(PORT) flash'; fi
+
+flash-docker: flash
 
 monitor:
-	@if [ -n "$(IDF)" ]; then cd firmware && idf.py -p $(PORT) monitor; else docker run --rm -it -v "$(CURDIR)/firmware:/project" -w /project --device=$(PORT) $(IDF_IMAGE) idf.py -p $(PORT) monitor; fi
+	@if [ -n "$(IDF)" ]; then cd firmware && idf.py -p $(PORT) monitor; else \
+		docker run --rm -it -v "$(CURDIR)/firmware:/project" -w /project --device=$(PORT) \
+			$(IDF_IMAGE) bash -lc '. $$IDF_PATH/export.sh && idf.py -p $(PORT) monitor'; fi
 
 sim:
 	$(CMAKE) -S sim -B sim/build
@@ -87,23 +107,27 @@ sim:
 
 fmt:
 	@if command -v clang-format >/dev/null; then \
-		find firmware tests/host sim -path '*/third_party' -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null | xargs -r clang-format -i; \
+		find firmware tests/host sim \( -path '*/third_party' -o -path 'firmware/managed_components' -o -path '*/build' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null | xargs -r clang-format -i; \
 	fi
 	$(NPM) --prefix web run typecheck
 
 fmt-check:
 	@if command -v clang-format >/dev/null; then \
-		files=$$(find firmware tests/host sim -path '*/third_party' -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null); \
+		files=$$(find firmware tests/host sim \( -path '*/third_party' -o -path 'firmware/managed_components' -o -path '*/build' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null); \
 		clang-format --dry-run --Werror $$files; \
 	else echo "clang-format not installed, skipping"; fi
 
 lint:
-	python3 tools/lint_openapi.py docs/api/openapi.yaml
+	$(PYTHON) tools/lint_openapi.py docs/api/openapi.yaml
 	$(NPM) --prefix web run typecheck
 
-check: fmt-check lint test web
+docs:
+	$(PYTHON) tools/check_docs.py
+
+check: fmt-check lint docs test web assets
 	@if command -v idf.py >/dev/null; then cd firmware && idf.py build; else echo "Skipping firmware build (idf.py not found; CI builds it in Docker)"; fi
-	@python3 tools/check_sizes.py
+	@$(PYTHON) tools/check_sizes.py
 
 clean:
-	rm -rf firmware/build tests/host/build sim/build web/dist web/node_modules
+	rm -rf firmware/build tests/host/build sim/build web/dist web/node_modules \
+		firmware/components/webassets/generated firmware/components/ui/generated

@@ -31,6 +31,7 @@
 | `ui` | LVGL pages, theme, German strings, timeouts, test pattern | write storage or call the network directly |
 | `net` | AP on demand, STA, DHCP, captive DNS, mDNS, SNTP, time service | serve HTTP routes |
 | `api` | REST, auth, CSRF, static SPA, CSV, backup, OTA, diagnostics | mutate the ledger except via service |
+| `webassets` | Generated gzip table of the admin SPA (`web/dist`), built by `tools/embed_web.py` | contain hand-written feature logic |
 | `main` | Boot order, wiring, watchdog, OTA validation | contain feature logic |
 
 ## Boot sequence

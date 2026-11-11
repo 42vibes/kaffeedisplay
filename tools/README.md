@@ -1,8 +1,32 @@
 # Tools
 
-- `bootstrap.sh` — verify host tools, install web dependencies.
-- `lint_openapi.py` — offline OpenAPI sanity check.
-- `check_sizes.py` — web bundle and firmware size budgets.
-- `hil.py` — hardware-in-the-loop smoke test (to be added with M1).
-- `settime.py` — set the device clock over the serial console (to be added).
-- `gen_fonts.sh` — regenerate LVGL fonts from the source TTFs (to be added).
+Host-side helpers. They are not part of the firmware runtime.
+
+| Tool | Purpose |
+|---|---|
+| `bootstrap.sh` | Verify host tools and install web dependencies. |
+| `embed_web.py` | Deterministic gzip embedding of `web/dist` into `firmware/components/webassets/generated/`. `--check` verifies freshness. |
+| `gen_fonts.py` | Regenerate LVGL fonts with pinned `lv_font_conv@1.5.3`; downloads/verifies pinned Inter and Montserrat TTFs. |
+| `hil.py` | pytest/pyserial/requests hardware-in-the-loop smoke test. Skips cleanly when `/dev/ttyUSB0` is absent. |
+| `settime.py` | Set or read the device clock over the serial CLI. |
+| `serial_proto.py` | Line-based serial CLI client shared by `hil.py` and `settime.py`. |
+| `check_sizes.py` | Web gzip, embedded asset and firmware size budgets. |
+| `check_docs.py` | Relative Markdown link checker (no network). |
+| `lint_openapi.py` | Offline OpenAPI sanity check; skips deep validation if PyYAML is absent. |
+| `requirements-tools.txt` | Pinned Python dependencies for HIL and linting (`make tools-deps`). |
+
+## Common commands
+
+```sh
+make assets      # python3 tools/embed_web.py
+make fonts       # python3 tools/gen_fonts.py
+make tools-deps  # pip install -r tools/requirements-tools.txt
+make hil         # python3 tools/hil.py --port /dev/ttyUSB0
+python3 tools/settime.py --status
+python3 tools/embed_web.py --check
+python3 tools/check_docs.py
+```
+
+`make build`, `make check` and CI run asset generation automatically. Generated
+output is gitignored; see `firmware/components/webassets/README.md` for the
+firmware interface.

@@ -1,8 +1,8 @@
 # T-007 — HIL tools, fonts/assets, release pipeline
 
-Status: ready
+Status: review
 Track: qa
-Owner: –
+Owner: T-007 tooling agent
 Branch: `feat/T-007-tooling`
 
 ## Context
@@ -41,4 +41,16 @@ release artifacts, without blocking feature work.
 
 ## Evidence
 
-<!-- PR, CI run, release artifact -->
+- `tools/embed_web.py` generates `firmware/components/webassets/generated/`
+  (gitignored); the component exposes `kaffee/web_assets.hpp`. Verified
+  deterministic with `--check`, and firmware builds in
+  `espressif/idf:release-v5.5`.
+- `tools/gen_fonts.py` produced five Inter/Montserrat subsets (umlauts, ß, €,
+  punctuation); regenerate with `make fonts`.
+- `tools/hil.py` + `tools/requirements-tools.txt`; serial boot check, HTTP smoke
+  test, clear skip without hardware. Hardware run on the connected board failed
+  the boot-banner check because it runs non-Kaffeekasse firmware (see PR notes).
+- `.github/workflows/release.yml` and CI size/docs checks; `make check` passes
+  locally without IDF (firmware build skipped).
+- `tools/settime.py` and `docs/serial-cli.md`.
+- PR: _to be added_

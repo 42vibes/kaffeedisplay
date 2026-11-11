@@ -69,19 +69,54 @@ When `/dev/ttyUSB0` is present:
 ```sh
 make flash
 make hil
+# or with a known password / LAN address:
+HIL_ADMIN_PASSWORD='...' HIL_BASE_URL=http://kaffeekasse.local/api/v1 make hil
 ```
 
-`make hil` should:
+`make hil`:
 
-1. flash a test build,
-2. wait for boot,
-3. read serial logs,
-4. connect to the AP or LAN,
-5. run the API smoke tests (login, create temp user/product, purchase, topup,
-   void, report CSV, OTA dry-run),
-6. factory-reset test data.
+1. optionally flashes (`HIL_FLASH=1` / `--flash`),
+2. waits for the `Kaffeekasse booting` banner over serial,
+3. starts the AP over the serial CLI unless `HIL_START_AP=0`,
+4. runs the API smoke test (login, create temp user/product, purchase, topup,
+   void, report CSV download),
+5. cleans up the temp user/product and the test events.
+
+`tools/hil.py` is a pytest module; `python3 -m pytest tools/hil.py -q -s` works
+too. It skips with a clear message when the serial port is absent or the HTTP
+API is unreachable. It fails — never silently skips — when a connected board
+does not run Kaffeekasse firmware.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `HIL_PORT` | `/dev/ttyUSB0` | serial device |
+| `HIL_BAUD` | `115200` | serial baud rate |
+| `HIL_BASE_URL` | `http://192.168.4.1/api/v1` | API base (AP or LAN) |
+| `HIL_ADMIN_USER` | `admin` | admin username |
+| `HIL_ADMIN_PASSWORD` | – | required for HTTP checks |
+| `HIL_START_AP` | `1` | ask the device to start its AP |
+| `HIL_FLASH` | `0` | run `make flash` first |
+| `HIL_KEEP` | `0` | leave temp data for inspection |
+| `HIL_TIMEOUT` | `10` | HTTP timeout in seconds |
+
+The serial protocol and the test-only `book` command are in
+`docs/serial-cli.md`. Install dependencies with `make tools-deps`.
 
 CI cannot reach hardware; firmware build is the required CI gate.
+
+## Assets and fonts
+
+```sh
+make web                 # Vite build
+make assets              # deterministic gzip embed -> webassets/generated (gitignored)
+python3 tools/embed_web.py --check
+make fonts               # pinned lv_font_conv@1.5.3 -> ui/generated (gitignored)
+```
+
+`tools/embed_web.py --check` fails when generated assets are stale. The gzip
+budget is enforced by `tools/check_sizes.py`. Font sources are pinned by URL and
+SHA-256; use `KAFFEE_FONT_DIR=...` and `--offline` for reproducible builds
+without network access.
 
 ## Fault injection
 

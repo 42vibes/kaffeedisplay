@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag name to publish (for example v1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  IDF_IMAGE: espressif/idf:release-v5.5
+  TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --prefix web
+      - run: npm --prefix web run typecheck
+      - run: npm --prefix web test
+      - run: npm --prefix web run build
+      - name: Size budget
+        run: python3 tools/check_sizes.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          if-no-files-found: error
+
+  firmware:
+    runs-on: ubuntu-24.04
+    needs: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+      - name: Embed web assets
+        run: |
+          python3 tools/embed_web.py
+          python3 tools/embed_web.py --check
+      - name: Build firmware
+        run: |
+          docker run --rm \
+            -v "$PWD/firmware:/project" \
+            -w /project \
+            "$IDF_IMAGE" \
+            bash -lc '. "$IDF_PATH/export.sh" && idf.py build'
+      - name: Collect release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp firmware/build/kaffeekasse.bin release/firmware.bin
+          (cd release && sha256sum firmware.bin > firmware.bin.sha256)
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          binary = Path("release/firmware.bin")
+          digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+          web = json.loads(Path("firmware/components/webassets/generated/manifest.json").read_text())
+          manifest = {
+              "name": "Kaffeekasse",
+              "tag": os.environ["TAG"],
+              "commit": os.environ.get("GITHUB_SHA", ""),
+              "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+              "idf": os.environ.get("IDF_IMAGE", "espressif/idf:release-v5.5"),
+              "web_assets": {
+                  "count": len(web["assets"]),
+                  "gzip_bytes": web["gzip_bytes"],
+                  "original_bytes": web["original_bytes"],
+              },
+              "artifacts": [
+                  {
+                      "name": "firmware.bin",
+                      "sha256": digest,
+                      "bytes": binary.stat().st_size,
+                  }
+              ],
+          }
+          Path("release/manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+          cat release/manifest.json
+      - name: Size budgets
+        run: python3 tools/check_sizes.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: release/*
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-24.04
+    needs: firmware
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: release
+      - name: Changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          if [ -n "$previous" ]; then
+            range="${previous}..HEAD"
+            echo "Changes since ${previous}:" > release/CHANGELOG.md
+          else
+            range="HEAD"
+            echo "Initial release." > release/CHANGELOG.md
+          fi
+          git log --pretty=format:'- %s (`%h`)' "$range" >> release/CHANGELOG.md
+          echo >> release/CHANGELOG.md
+          cat release/CHANGELOG.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Kaffeekasse ${{ env.TAG }}
+          body_path: release/CHANGELOG.md
+          files: |
+            release/firmware.bin
+            release/firmware.bin.sha256
+            release/manifest.json
+            release/CHANGELOG.md
+          fail_on_unmatched_files: true
