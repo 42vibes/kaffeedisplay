@@ -229,6 +229,12 @@ nlohmann::json settings_to_json(const Settings& s, bool include_secrets) {
                        {"guest_enabled", s.app.guest_enabled},
                        {"max_open_debt_cents", s.app.max_open_debt_cents},
                        {"low_balance_warning_cents", s.app.low_balance_warning_cents}}}};
+    if (include_secrets) {
+        j["admin"] = {{"username", s.admin.username},
+                      {"password_hash", s.admin.password_hash},
+                      {"salt", s.admin.salt},
+                      {"iterations", s.admin.iterations}};
+    }
     return j;
 }
 
@@ -260,6 +266,13 @@ Settings settings_from_json(const nlohmann::json& j, const Settings& base) {
         s.app.max_open_debt_cents = a.value("max_open_debt_cents", s.app.max_open_debt_cents);
         s.app.low_balance_warning_cents =
             a.value("low_balance_warning_cents", s.app.low_balance_warning_cents);
+    }
+    if (j.contains("admin") && j["admin"].is_object()) {
+        const auto& a = j["admin"];
+        s.admin.username = a.value("username", s.admin.username);
+        s.admin.password_hash = a.value("password_hash", s.admin.password_hash);
+        s.admin.salt = a.value("salt", s.admin.salt);
+        s.admin.iterations = a.value("iterations", s.admin.iterations);
     }
     return s;
 }
