@@ -1,0 +1,5 @@
+timestamp,category,description,vendor,amount_eur,amount_cents,status,note,time_quality
+2026-11-06T08:30:00+01:00,Einkauf,Milch,Rewe,-3.00,-300,erfasst,,synchronisiert
+2026-11-21T13:00:00+01:00,Einkauf,Milch,Rewe,-1.00,-100,geändert,,synchronisiert
+2026-11-22T14:00:00+01:00,Service,Maschine,Service24,-8.00,-800,storniert,,synchronisiert
+2026-11-23T15:00:00+01:00,Service,Maschine,Service24,8.00,800,Storno,Falsch gebucht,synchronisiert

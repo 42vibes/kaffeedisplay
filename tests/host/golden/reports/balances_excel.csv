@@ -1,0 +1,6 @@
+﻿sep=;
+Mitglied;Saldo (EUR);Saldo (Cent);Guthaben (EUR);Guthaben (Cent);Schulden (EUR);Schulden (Cent);Status
+Ada;9,00;900;9,00;900;0,00;0;aktiv
+Ben;11,20;1120;11,20;1120;0,00;0;aktiv
+Cem;5,00;500;5,00;500;0,00;0;archiviert
+Summe;25,20;2520;25,20;2520;0,00;0;

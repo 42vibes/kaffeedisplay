@@ -1,9 +1,9 @@
 # T-005 — Reports + Excel-compatible CSV backend
 
-Status: blocked on T-001
+Status: review
 Track: backend
-Owner: –
-Branch: `feat/T-005-reports-csv`
+Owner: agent T-006
+Branch: `feat/T-006-reports`
 
 ## Context
 

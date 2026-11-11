@@ -1,0 +1,7 @@
+﻿sep=;
+Position;Betrag (EUR);Betrag (Cent);Hinweis
+Anfangssaldo Kasse;10,00;1000;Bestand vor dem Zeitraum
+Einzahlungen (Mitglieder);17,00;1700;Barzahlungen minus Stornos
+Gastverkäufe;1,30;130;Sofortzahlungen minus Stornos
+Ausgaben;-4,00;-400;Belege minus Stornos
+Endsaldo Kasse;24,30;2430;Anfangssaldo plus Bewegungen

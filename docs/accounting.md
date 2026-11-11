@@ -62,6 +62,27 @@ Default `csv_excel`:
 
 `csv_raw`: comma delimiter, dot decimals, ISO timestamps for scripts.
 
+## Report component
+
+`firmware/components/reports` implements the report tables and CSV streaming.
+It is pure C++17, depends only on `domain` and never buffers a complete file.
+
+```cpp
+#include "kaffee/reports.hpp"
+
+using namespace kaffee::reports;
+Period period = month(now);
+Sink sink{[&response](std::string_view chunk) { return response.write(chunk); }};
+auto result = write_csv(ledger, ReportKind::Consumption, period, CsvFormat::Excel, sink);
+```
+
+`for_each_row()` yields the same rows to a JSON renderer. Periods carry explicit
+`from`/`to` Unix seconds with an exclusive end; `period(kind, now)` computes the
+Europe/Berlin week/month/year variants. `csv_raw` uses stable English header
+keys, comma, dot decimals and ISO 8601 timestamps with offset for scripts.
+Formula protection is applied to Excel text cells only; negative numeric cells
+are never prefixed.
+
 ## Example
 
 | Action | Member balance | Cash expected | Equity |
