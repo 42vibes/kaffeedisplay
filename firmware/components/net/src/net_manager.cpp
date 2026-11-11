@@ -213,6 +213,44 @@ bool build_dns_response(const uint8_t* query, size_t query_length, uint8_t* resp
     return true;
 }
 
+// When NAPT is active, relay DNS to the STA uplink so AP clients really have
+// internet. The captive responder above remains the fallback when forwarding
+// fails or NAPT is disabled.
+bool forward_dns_query(uint32_t server_address, const uint8_t* query, size_t query_length,
+                       uint8_t* response, size_t capacity, size_t& response_length) {
+    if (server_address == 0 || server_address == htonl(0xC0A80401)) {
+        return false;
+    }
+    const int socket_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socket_fd < 0) {
+        return false;
+    }
+    struct timeval timeout = {};
+    timeout.tv_usec = 500000;
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    struct sockaddr_in address = {};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(kDnsPort);
+    address.sin_addr.s_addr = server_address;
+    if (sendto(socket_fd, query, query_length, 0, reinterpret_cast<struct sockaddr*>(&address),
+               sizeof(address)) < 0) {
+        close(socket_fd);
+        return false;
+    }
+
+    struct sockaddr_in from = {};
+    socklen_t from_length = sizeof(from);
+    const int received = recvfrom(socket_fd, response, capacity, 0,
+                                  reinterpret_cast<struct sockaddr*>(&from), &from_length);
+    close(socket_fd);
+    if (received <= 0) {
+        return false;
+    }
+    response_length = static_cast<size_t>(received);
+    return true;
+}
+
 }  // namespace
 
 struct NetworkManager::Impl {
@@ -255,6 +293,7 @@ struct NetworkManager::Impl {
     bool sntp_started = false;
     bool mdns_started = false;
     bool napt_running = false;
+    std::atomic<uint32_t> upstream_dns{0};
 
     std::atomic<bool> component_running{true};
     std::atomic<bool> dns_requested{false};
@@ -520,15 +559,32 @@ struct NetworkManager::Impl {
         mdns_started = false;
     }
 
+    void update_upstream_dns_locked() {
+        esp_netif_dns_info_t dns = {};
+        if (sta_netif != nullptr &&
+            esp_netif_get_dns_info(sta_netif, ESP_NETIF_DNS_MAIN, &dns) == ESP_OK &&
+            dns.ip.type == ESP_IPADDR_TYPE_V4) {
+            const uint32_t address = dns.ip.u_addr.ip4.addr;
+            upstream_dns.store(address == htonl(0xC0A80401) ? 0 : address);
+        } else {
+            upstream_dns.store(0);
+        }
+    }
+
     void enable_napt_locked() {
-        if (!settings.network.napt_enabled || !ap_active || !sta_connected || napt_running ||
-            ap_netif == nullptr || sta_netif == nullptr) {
+        if (!settings.network.napt_enabled || !ap_active || !sta_connected || ap_netif == nullptr ||
+            sta_netif == nullptr) {
+            return;
+        }
+        if (napt_running) {
+            update_upstream_dns_locked();
             return;
         }
 #if defined(CONFIG_LWIP_IPV4_NAPT) && CONFIG_LWIP_IPV4_NAPT
         const esp_err_t err = esp_netif_napt_enable(ap_netif);
         if (err == ESP_OK) {
             napt_running = true;
+            update_upstream_dns_locked();
             ESP_LOGI(kTag, "NAPT enabled for AP clients");
         } else {
             ESP_LOGW(kTag, "NAPT enable failed (%s)", esp_err_to_name(err));
@@ -545,6 +601,7 @@ struct NetworkManager::Impl {
         }
 #endif
         napt_running = false;
+        upstream_dns.store(0);
     }
 
     void start_dns_locked() {
@@ -869,6 +926,9 @@ struct NetworkManager::Impl {
             {
                 std::lock_guard<std::mutex> lock(self->mutex);
                 expired = self->ap_timer.tick(uptime_now());
+                if (self->napt_running) {
+                    self->update_upstream_dns_locked();
+                }
                 if (self->time_valid && self->trusted) {
                     const Timestamp current = self->now_locked();
                     if (current >= self->persisted_epoch + kTimePersistIntervalS) {
@@ -932,8 +992,17 @@ struct NetworkManager::Impl {
                 }
                 uint8_t response[512] = {};
                 size_t response_length = 0;
-                if (build_dns_response(query, static_cast<size_t>(received), response,
-                                       sizeof(response), response_length)) {
+                bool handled = false;
+                const uint32_t upstream = self->upstream_dns.load();
+                if (upstream != 0) {
+                    handled = forward_dns_query(upstream, query, static_cast<size_t>(received),
+                                                response, sizeof(response), response_length);
+                }
+                if (!handled) {
+                    handled = build_dns_response(query, static_cast<size_t>(received), response,
+                                                 sizeof(response), response_length);
+                }
+                if (handled) {
                     sendto(socket_fd, response, response_length, 0,
                            reinterpret_cast<struct sockaddr*>(&from), from_length);
                 }
