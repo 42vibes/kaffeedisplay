@@ -58,6 +58,8 @@ This task completes persistence and the service facade so API/UI can integrate.
 
 ## Evidence
 
+PR: https://github.com/Babo96/kaffeedisplay/pull/3
+
 Implementation notes:
 
 - Host storage: `JournalEventStore` (portable core) + `FileEventStore` (host
