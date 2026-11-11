@@ -186,6 +186,16 @@ bool run_click_test(FakeBackend& backend, kaffee::ui::UiApp& app, kaffee::ui::Ui
     advance(h, 8);
     ok = expect(!control.test_pattern_active(), "clicking the centre dismisses test pattern") && ok;
 
+    // AP stay-awake goes through the display port, not only LVGL activity.
+    backend.start_ap();
+    app.refresh_data();
+    advance(h, 8);
+    ok = expect(display.stay_awake(), "active AP holds the panel awake") && ok;
+    backend.stop_ap();
+    app.refresh_data();
+    advance(h, 8);
+    ok = expect(!display.stay_awake(), "stopping AP releases the panel") && ok;
+
     if (ok) {
         std::printf("click-test: PASS (purchases %d, guest sales %d, voids %d)\n",
                     backend.count_events(kaffee::EventType::Purchase),
