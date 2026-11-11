@@ -1,9 +1,9 @@
 # T-002 — Admin SPA: all pages + German UI
 
-Status: ready
+Status: in-progress
 Track: web
-Owner: –
-Branch: `feat/T-002-admin-web`
+Owner: web-agent
+Branch: `feat/T-002-web`
 
 ## Context
 

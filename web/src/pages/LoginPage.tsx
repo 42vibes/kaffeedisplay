@@ -3,7 +3,13 @@ import { ApiRequestError, login } from "../api/client";
 import type { Session } from "../api/types";
 import { de } from "../i18n/de";
 
-export function LoginPage({ onLogin }: { onLogin: (session: Session) => void }) {
+export function LoginPage({
+  onLogin,
+  notice,
+}: {
+  onLogin: (session: Session) => void;
+  notice?: string;
+}) {
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -17,9 +23,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: Session) => void }) 
       onLogin(await login(username.trim(), password));
     } catch (err) {
       setError(
-        err instanceof ApiRequestError && err.status === 401
-          ? de.wrongPassword
-          : de.loginFailed,
+        err instanceof ApiRequestError && err.status === 401 ? de.wrongPassword : de.loginFailed,
       );
     } finally {
       setBusy(false);
@@ -35,13 +39,20 @@ export function LoginPage({ onLogin }: { onLogin: (session: Session) => void }) 
         </div>
         <form className="card space-y-4 p-5" onSubmit={submit}>
           <h1 className="text-lg font-medium">{de.login}</h1>
+          {notice ? (
+            <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-400">
+              {notice}
+            </div>
+          ) : null}
           <label className="block space-y-1.5">
             <span className="label">{de.username}</span>
             <input
               className="input"
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(event) => setUsername(event.target.value)}
               autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
               required
             />
           </label>
@@ -51,16 +62,17 @@ export function LoginPage({ onLogin }: { onLogin: (session: Session) => void }) 
               className="input"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(event) => setPassword(event.target.value)}
               autoComplete="current-password"
               required
               autoFocus
             />
           </label>
-          {error ? <div className="text-sm text-rust-400">{error}</div> : null}
+          {error ? <div className="text-sm text-rust-400" role="alert">{error}</div> : null}
           <button className="btn btn-primary w-full" disabled={busy} type="submit">
             {busy ? de.loading : de.signIn}
           </button>
+          <p className="muted text-xs leading-relaxed">{de.loginHint}</p>
         </form>
       </div>
     </div>
