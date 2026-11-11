@@ -46,7 +46,7 @@ Result<Unit> LittleFsEventStore::ensure_root() {
     if (::mkdir(root().c_str(), 0755) != 0 && errno != EEXIST) {
         return fs_fail("mkdir " + root());
     }
-    struct stat st{};
+    struct stat st = {};
     if (::stat(root().c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) {
         return Result<Unit>::fail("storage", "mount point is not a directory: " + root());
     }

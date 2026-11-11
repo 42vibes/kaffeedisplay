@@ -384,7 +384,7 @@ TEST_CASE("quarantine truncates in place and tolerates a failed corrupt dump") {
     // is not possible.
     fs::create_directories(root / "journal.jsonl.corrupt");
 
-    struct stat before{};
+    struct stat before = {};
     REQUIRE(::stat((root / "journal.jsonl").c_str(), &before) == 0);
 
     FileEventStore store(root.string());
@@ -398,7 +398,7 @@ TEST_CASE("quarantine truncates in place and tolerates a failed corrupt dump") {
     CHECK(fs::is_directory(root / "journal.jsonl.corrupt"));
 
     // Truncated in place: same inode, only the valid prefix remains.
-    struct stat after{};
+    struct stat after = {};
     REQUIRE(::stat((root / "journal.jsonl").c_str(), &after) == 0);
     CHECK(after.st_ino == before.st_ino);
     CHECK(fs::file_size(root / "journal.jsonl") == good.size());
