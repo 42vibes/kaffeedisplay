@@ -1,9 +1,9 @@
 # T-001 — Domain, storage, service implementation
 
-Status: ready
+Status: review
 Track: backend
-Owner: –
-Branch: `feat/T-001-domain-storage`
+Owner: subagent (T-001)
+Branch: `feat/T-001-domain`
 
 ## Context
 
@@ -58,4 +58,33 @@ This task completes persistence and the service facade so API/UI can integrate.
 
 ## Evidence
 
-<!-- PR link, test output, notes -->
+Implementation notes:
+
+- Host storage: `JournalEventStore` (portable core) + `FileEventStore` (host
+  filesystem backend). Journal is `journal.jsonl`; snapshots are
+  `snapshot.a.json` / `snapshot.b.json`; corrupt tails are copied to
+  `journal.jsonl.corrupt`. Appends `fflush` + `fsync`; snapshots and journal
+  rotation use `tmp` + rename + directory fsync.
+- Device storage: `LittleFsEventStore` (`#ifdef ESP_PLATFORM`) reuses the same
+  journal core with ESP-LittleFS capacity reporting. `NvsSettingsStore` keeps
+  the settings JSON blob (including secrets) in NVS. **Device adapters were not
+  compiled here: this worktree has no ESP-IDF toolchain.**
+- Service: PIMPL implementation with `std::mutex`, ledger commit hook ->
+  `IEventStore::append` before state, `IPlatform::random_u64()` ids, PBKDF2
+  (50 000 iterations), session idle/absolute expiry, exponential login backoff,
+  CSRF, debt limit, backup without secrets, and `undo_booking` actor `ui`.
+- Initial admin password is generated on first boot and kept in RAM for the
+  current boot only; `change_admin_password` clears it and writes an audit event.
+  A reboot before the first change requires physical/factory reset (see
+  `docs/security.md`).
+- `settings_to_json(..., true)` now also emits `admin` credentials so the host
+  JSON store and NVS can persist them. Backups still call
+  `settings_to_json(..., false)` and never contain admin/AP/STA secrets.
+
+`make test-host` output:
+
+```
+[doctest] test cases:    39 |    39 passed | 0 failed | 0 skipped
+[doctest] assertions: 10264 | 10264 passed | 0 failed |
+[doctest] Status: SUCCESS!
+```

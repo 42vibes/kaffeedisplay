@@ -14,7 +14,8 @@ for the duration of the admin window, but never to the internet.
 - Single account `admin`; password stored as PBKDF2-HMAC-SHA256 with a random
   16-byte salt, 50 000 iterations, constant-time compare.
 - Initial password is generated on first boot and shown once on the setup screen.
-  Force change on first login (recommended).
+  It is kept in RAM for the current boot; reboot before the first change requires
+  physical/factory reset. Force change on first login (recommended).
 - Login rate limit: token bucket per client IP, exponential backoff after 5
   failures, log attempts.
 - Session: 128-bit random token in RAM, `HttpOnly; SameSite=Strict` cookie,

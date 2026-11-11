@@ -99,6 +99,10 @@ id, ts, counted_cents, expected_cents, difference_cents, note
 - Corrupt tail: stop at the first invalid event, keep a `.corrupt` copy, expose a
   diagnostics warning.
 - Compaction: write inactive snapshot, fsync, rotate journal, delete old.
+- Host tests use the same layout in a plain directory (`FileEventStore`). The
+  device uses LittleFS (`LittleFsEventStore`) with the journal core shared.
+- Journal appends are `fflush` + `fsync`; snapshot and journal replacement use a
+  temporary file, `fsync`, rename and directory `fsync`.
 
 ## Backup JSON
 

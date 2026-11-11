@@ -5,7 +5,7 @@ file as you work; put the PR link under Evidence when done.
 
 | ID | Title | Track | Depends | Owner | Status |
 |---|---|---|---|---|---|
-| T-001 | Domain, storage, service implementation | backend | foundation | – | ready |
+| T-001 | Domain, storage, service implementation | backend | foundation | subagent | review |
 | T-002 | Admin SPA: all pages + German UI | web | foundation | – | ready |
 | T-003 | Board bring-up + 3-page LVGL device UI | embedded | foundation | – | ready |
 | T-004 | HTTP API, auth, AP/time, backup/OTA | backend | T-001 | – | blocked on T-001 |
