@@ -13,3 +13,17 @@ indent_size = 2
 
 [Makefile]
 indent_style = tab
+
+# Golden report fixtures are compared byte for byte (UTF-8 BOM, CRLF for the
+# Excel variants). Keep editors from rewriting their line endings or BOM.
+[tests/host/golden/reports/*_excel.csv]
+charset = utf-8-bom
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = false
+
+[tests/host/golden/reports/*_raw.csv]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = false

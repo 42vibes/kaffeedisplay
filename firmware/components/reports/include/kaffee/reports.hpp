@@ -17,6 +17,19 @@
 // Period boundaries use Europe/Berlin wall-clock time and the EU DST rule
 // (last Sunday of March 01:00 UTC until last Sunday of October 01:00 UTC).
 // `Period::from` is inclusive, `Period::to` is exclusive.
+//
+// Attribution policy:
+// - `Overview` booking aggregates and `Consumption` use the original booking
+//   period: a void nets out the original booking (and increments `Stornos`),
+//   matching `Ledger::leaderboard()`. A late void therefore changes the report
+//   of the original period, not the month in which it was reversed.
+// - `Deposits`, `Cashflow` and `Transactions` are timestamp based: a void is a
+//   cash movement (or an audit row) in the period in which it was recorded.
+// - `Balances` reconstruct user name/status and balances as of `Period::to`.
+// - `Expenses` is an event-delta log: created = -amount, updated = -(new-old),
+//   voided = +amount. It is not a snapshot of current expense values.
+// - Time quality is exported per row in `Transactions`/`Expenses` and as the
+//   "Geschätzte Zeitangaben" count in `Overview`.
 namespace kaffee::reports {
 
 enum class PeriodKind { Week, Month, Year, All, Custom };
@@ -169,8 +182,12 @@ std::string period_kind_name(PeriodKind kind);
 std::optional<PeriodKind> period_kind_from_name(std::string_view name);
 
 const char* csv_content_type(CsvFormat format);
-// `kaffeekasse_YYYY-MM_<report>.csv`, `kaffeekasse_all_<report>.csv` or
-// `kaffeekasse_YYYY-MM-DD_YYYY-MM-DD_<report>.csv` for custom periods.
+// Distinct, non-colliding names per period kind:
+// `kaffeekasse_YYYY-MM_<report>.csv` (month),
+// `kaffeekasse_YYYY-Www_<report>.csv` (ISO week, e.g. `2026-W53`),
+// `kaffeekasse_YYYY_<report>.csv` (year), `kaffeekasse_all_<report>.csv`,
+// `kaffeekasse_YYYY-MM-DD_YYYY-MM-DD_<report>.csv` (custom), and
+// `kaffeekasse_YYYY-MM-DD_offen_<report>.csv` when a custom end is open.
 std::string report_filename(ReportKind kind, const Period& period);
 
 // Monthly counts net of voids; delegates to Ledger::leaderboard so a late void

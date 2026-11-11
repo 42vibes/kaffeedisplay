@@ -39,14 +39,30 @@ balances. If the difference should be booked, the admin records an expense
 
 - Consumption: member items/revenue and guest items/revenue, per user/product.
 - Deposits: cash payments per member.
-- Expenses: by category/vendor/date; voided rows visible.
+- Expenses: event-delta log by category/vendor/date; created rows are negative,
+  updates carry `−(new−old)`, voids are the positive reversal. This preserves
+  the audit trail; it is not a snapshot of current expense values.
 - Cash flow: opening cash, deposits, guest sales, expenses, closing cash.
-- Balances: current balance per member, prepaid/debt split.
+- Balances: balance per member as of the period end, prepaid/debt split, with
+  the user name and active/archived status reconstructed as of that instant.
 - Transactions: line-level ledger with `payment` (`Guthaben` / `Bar (Gast)`) and
   void markers.
 - Periods: ISO week (Mo–So), calendar month, calendar year, all time, custom.
   Boundaries use `Europe/Berlin`.
-- Time quality is included (`Zeitqualität`); estimated timestamps are flagged.
+- Time quality is included (`Zeitqualität`); estimated timestamps are flagged
+  per row in transactions/expenses and counted in the overview.
+
+### Void attribution
+
+Voids are attributed to the original booking period for consumption, the
+overview booking aggregates and the leaderboard. A late void therefore makes the
+original month net to zero (the row stays visible through its `Stornos` count)
+instead of creating negative consumption in the reversal month.
+
+Cash flow, deposits and the line-level transaction log behave differently: they
+are timestamp based, so the money movement is reported in the month in which the
+void was recorded. Use cash flow for the physical cash history and consumption
+for "what was consumed in this period now that all corrections are known".
 
 ## Excel-compatible CSV
 
@@ -58,7 +74,13 @@ Default `csv_excel`:
 - Escape quotes; prefix formula-leading cells (`= + - @`) unless they are valid
   numbers.
 - Stream rows; do not build the whole file in RAM.
-- Filename: `kaffeekasse_YYYY-MM_<report>.csv`.
+- Filenames never collide between period kinds:
+  `kaffeekasse_YYYY-MM_<report>.csv` (month),
+  `kaffeekasse_YYYY-Www_<report>.csv` (ISO week),
+  `kaffeekasse_YYYY_<report>.csv` (year),
+  `kaffeekasse_all_<report>.csv`, and
+  `kaffeekasse_YYYY-MM-DD_YYYY-MM-DD_<report>.csv` (custom). A custom period
+  with an open end uses `YYYY-MM-DD_offen`.
 
 `csv_raw`: comma delimiter, dot decimals, ISO timestamps for scripts.
 
@@ -81,7 +103,8 @@ auto result = write_csv(ledger, ReportKind::Consumption, period, CsvFormat::Exce
 Europe/Berlin week/month/year variants. `csv_raw` uses stable English header
 keys, comma, dot decimals and ISO 8601 timestamps with offset for scripts.
 Formula protection is applied to Excel text cells only; negative numeric cells
-are never prefixed.
+are never prefixed. `report_filename()` emits distinct month (`YYYY-MM`), ISO
+week (`YYYY-Www`), year (`YYYY`), all (`all`) and custom date-range names.
 
 ## Example
 

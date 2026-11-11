@@ -1,16 +1,16 @@
 timestamp,type,user,product,description,payment,amount_eur,amount_cents,status,time_quality,note
-2026-11-02T09:00:00+01:00,Einzahlung,Ada,,,Bar,10.00,1000,ok,synchronisiert,
-2026-11-04T11:00:00+01:00,Einkauf,Ben,Tee,Tee,Guthaben,-0.80,-80,ok,synchronisiert,
-2026-11-05T12:00:00+01:00,Gastverkauf,,Kaffee,Kaffee,Bar (Gast),0.50,50,ok,synchronisiert,
-2026-11-06T08:30:00+01:00,Ausgabe,,,Milch,,-3.00,-300,ok,synchronisiert,
-2026-11-07T14:00:00+01:00,Korrektur,Ada,,,Guthaben,-1.00,-100,ok,synchronisiert,Schwund
-2026-11-08T15:00:00+01:00,Einzahlung,Cem,,,Bar,5.00,500,ok,synchronisiert,
+2026-11-02T09:00:00+01:00,Einzahlung,Ada,,,Bar,10.00,1000,gebucht,synchronisiert,
+2026-11-04T11:00:00+01:00,Einkauf,Ben,Tee,Tee,Guthaben,-0.80,-80,gebucht,synchronisiert,
+2026-11-05T12:00:00+01:00,Gastverkauf,,Kaffee,Kaffee,Bar (Gast),0.50,50,gebucht,synchronisiert,
+2026-11-06T08:30:00+01:00,Ausgabe,,,Milch,,-3.00,-300,gebucht,synchronisiert,
+2026-11-07T14:00:00+01:00,Korrektur,Ada,,,Guthaben,-1.00,-100,gebucht,synchronisiert,Schwund
+2026-11-08T15:00:00+01:00,Einzahlung,Cem,,,Bar,5.00,500,gebucht,synchronisiert,
 2026-11-09T16:00:00+01:00,Storno,Ada,Kaffee,Kaffee,Guthaben,0.50,50,Storno,synchronisiert,Fehlbuchung (zu evt_11)
 2026-11-10T17:00:00+01:00,Einzahlung,Ben,,,Bar,2.00,200,storniert,synchronisiert,
 2026-11-16T09:15:00+01:00,Einkauf,Ada,Tee,Tee,Guthaben,-0.80,-80,storniert,synchronisiert,
 2026-11-17T09:45:00+01:00,Storno,Ada,Tee,Tee,Guthaben,0.80,80,Storno,synchronisiert,Korrektur (zu evt_22)
-2026-11-18T11:00:00+01:00,Gastverkauf,,Tee,Tee,Bar (Gast),0.80,80,ok,synchronisiert,
-2026-11-21T13:00:00+01:00,Ausgabe geändert,,,Milch,,-1.00,-100,ok,synchronisiert,
+2026-11-18T11:00:00+01:00,Gastverkauf,,Tee,Tee,Bar (Gast),0.80,80,gebucht,synchronisiert,
+2026-11-21T13:00:00+01:00,Ausgabe geändert,,,Milch,,-1.00,-100,gebucht,synchronisiert,
 2026-11-22T14:00:00+01:00,Ausgabe,,,Maschine,,-8.00,-800,storniert,synchronisiert,
 2026-11-23T15:00:00+01:00,Ausgabe storniert,,,Maschine,,8.00,800,Storno,synchronisiert,Falsch gebucht
-2026-11-30T21:00:00+01:00,Kassensturz,,,Kassenzählung,,0.00,0,ok,synchronisiert,Kassensturz
+2026-11-30T21:00:00+01:00,Kassensturz,,,Kassenzählung,,0.00,0,gebucht,synchronisiert,Kassensturz

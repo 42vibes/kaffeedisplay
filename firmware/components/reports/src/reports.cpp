@@ -184,6 +184,13 @@ bool is_expense_event(EventType type) {
            type == EventType::ExpenseVoided;
 }
 
+// Balance/cash event types that a `void` event may reverse. User, product,
+// settings, audit and cash-count events are never shown as financial rows.
+bool is_voidable_financial(EventType type) {
+    return type == EventType::Purchase || type == EventType::GuestSale ||
+           type == EventType::Topup || type == EventType::Adjustment;
+}
+
 Result<Unit> sink_failed() {
     return Result<Unit>::fail("sink", "report sink aborted");
 }
@@ -201,6 +208,7 @@ struct PeriodTotals {
     Cents topups = 0;
     int expense_count = 0;
     Cents expenses = 0;
+    int estimated_events = 0;
     Cents cash_movement = 0;
 };
 
@@ -233,51 +241,45 @@ std::string consumption_user_label(const ConsumptionAggregate& aggregate, bool g
 Result<Unit> report_overview(const Ledger& ledger, const Period& period, const RowSink& sink) {
     PeriodTotals totals;
     for (const Event& event : ledger.events()) {
-        if (in_period(period, event.ts)) totals.cash_movement += cash_delta(ledger, event);
         if (!in_period(period, event.ts)) continue;
+        totals.cash_movement += cash_delta(ledger, event);
+        if (is_financial_event(event.type) && event.time_source != TimeSource::Synced)
+            totals.estimated_events += 1;
 
+        // Booking aggregates use original-period attribution: a void removes
+        // the original booking from the period in which it was made, matching
+        // Ledger::leaderboard(). Cash rows above still follow the void's own
+        // timestamp because that is when the money moved.
         switch (event.type) {
             case EventType::Purchase:
+                if (ledger.is_voided(event.id)) break;
                 totals.member_items += 1;
                 totals.member_revenue += -event.amount_cents;
                 break;
             case EventType::GuestSale:
+                if (ledger.is_voided(event.id)) break;
                 totals.guest_items += 1;
                 totals.guest_revenue += event.amount_cents;
                 break;
             case EventType::Topup:
+                if (ledger.is_voided(event.id)) break;
                 totals.topup_count += 1;
                 totals.topups += event.amount_cents;
                 break;
             case EventType::ExpenseCreated:
+                if (ledger.is_voided(event.expense_id)) break;
                 totals.expense_count += 1;
                 totals.expenses += -event.amount_cents;
                 break;
             case EventType::ExpenseUpdated:
-            case EventType::ExpenseVoided:
+                if (ledger.is_voided(event.expense_id)) break;
                 totals.expenses += -event.amount_cents;
                 break;
-            case EventType::Void: {
-                auto original = ledger.find_event(event.reverses);
-                if (!original) break;
-                switch (original->type) {
-                    case EventType::Purchase:
-                        totals.member_items -= 1;
-                        totals.member_revenue += -event.amount_cents;
-                        break;
-                    case EventType::GuestSale:
-                        totals.guest_items -= 1;
-                        totals.guest_revenue += event.amount_cents;
-                        break;
-                    case EventType::Topup:
-                        totals.topup_count -= 1;
-                        totals.topups += event.amount_cents;
-                        break;
-                    default:
-                        break;
-                }
+            case EventType::ExpenseVoided:
+            case EventType::Void:
+                // Reversals are attributed to the original booking, which is
+                // excluded above while it is voided.
                 break;
-            }
             default:
                 break;
         }
@@ -315,6 +317,7 @@ Result<Unit> report_overview(const Ledger& ledger, const Period& period, const R
         {"Gastverkäufe: Artikel", totals.guest_items, totals.guest_revenue},
         {"Einzahlungen", totals.topup_count, totals.topups},
         {"Ausgaben (Belege)", totals.expense_count, totals.expenses},
+        {"Geschätzte Zeitangaben", totals.estimated_events, 0},
         {"Anfangssaldo Kasse", 0, opening_cash},
         {"Endsaldo Kasse", 0, closing_cash},
         {"Guthaben (Forderungen)", 0, prepaid},
@@ -339,34 +342,28 @@ Result<Unit> report_consumption(const Ledger& ledger, const Period& period, cons
             aggregate.user = event.user_name;
             aggregate.product = event.product_name;
             aggregate.category = event.product_category;
-            aggregate.count += 1;
-            aggregate.amount += -event.amount_cents;
+            if (ledger.is_voided(event.id)) {
+                // Void attribution: the correction belongs to the original
+                // booking period, so the booking is netted out here even when
+                // the reversal happened later. Keep a marker for transparency.
+                aggregate.corrections += 1;
+            } else {
+                aggregate.count += 1;
+                aggregate.amount += -event.amount_cents;
+            }
         } else if (event.type == EventType::GuestSale) {
             auto& aggregate = aggregates[{1, "", event.product_id}];
             aggregate.product = event.product_name;
             aggregate.category = event.product_category;
-            aggregate.count += 1;
-            aggregate.amount += event.amount_cents;
-        } else if (event.type == EventType::Void) {
-            auto original = ledger.find_event(event.reverses);
-            if (!original) continue;
-            if (original->type == EventType::Purchase) {
-                auto& aggregate = aggregates[{0, event.user_id, event.product_id}];
-                aggregate.user = event.user_name;
-                aggregate.product = event.product_name;
-                aggregate.category = event.product_category;
-                aggregate.count -= 1;
-                aggregate.amount += -event.amount_cents;
+            if (ledger.is_voided(event.id)) {
                 aggregate.corrections += 1;
-            } else if (original->type == EventType::GuestSale) {
-                auto& aggregate = aggregates[{1, "", event.product_id}];
-                aggregate.product = event.product_name;
-                aggregate.category = event.product_category;
-                aggregate.count -= 1;
+            } else {
+                aggregate.count += 1;
                 aggregate.amount += event.amount_cents;
-                aggregate.corrections += 1;
             }
         }
+        // Void events are not rows here: their effect is applied to the
+        // original booking above.
     }
 
     for (const auto& entry : aggregates) {
@@ -502,19 +499,46 @@ Result<Unit> report_cashflow(const Ledger& ledger, const Period& period, const R
 }
 
 Result<Unit> report_balances(const Ledger& ledger, const Period& period, const RowSink& sink) {
+    // Reconstruct user names and active status as of `period.to` from the
+    // event snapshots. The current `User::active` flag is not used because a
+    // user archived later must still appear active in an earlier report.
+    struct UserState {
+        std::string name;
+        bool active = true;
+    };
+    std::map<std::string, UserState> users;
     std::map<std::string, Cents> balances;
     for (const Event& event : ledger.events()) {
-        if (event.ts >= period.to || event.user_id.empty()) continue;
-        balances[event.user_id] += event.amount_cents;
+        if (event.ts >= period.to) continue;
+        if (!event.user_id.empty()) balances[event.user_id] += event.amount_cents;
+        switch (event.type) {
+            case EventType::UserCreated:
+            case EventType::UserUpdated:
+            case EventType::UserArchived: {
+                auto& state = users[event.user_id];
+                state.name = event.user_name;
+                state.active = event.user_active;
+                break;
+            }
+            default:
+                break;
+        }
+    }
+    // Defensive fallback for ledgers without user snapshots; honor the
+    // creation timestamp so users created after the period are never listed.
+    for (const User& user : ledger.users()) {
+        if (user.created_at >= period.to) continue;
+        auto it = users.find(user.id);
+        if (it == users.end()) users[user.id] = UserState{user.name, user.active};
     }
 
     std::vector<BalanceAggregate> rows;
-    rows.reserve(ledger.users().size());
-    for (const User& user : ledger.users()) {
+    rows.reserve(users.size());
+    for (const auto& entry : users) {
         BalanceAggregate aggregate;
-        aggregate.user = user.name;
-        aggregate.active = user.active;
-        auto it = balances.find(user.id);
+        aggregate.user = entry.second.name;
+        aggregate.active = entry.second.active;
+        auto it = balances.find(entry.first);
         if (it != balances.end()) aggregate.balance = it->second;
         rows.push_back(std::move(aggregate));
     }
@@ -546,9 +570,17 @@ Result<Unit> report_balances(const Ledger& ledger, const Period& period, const R
 
 Result<Unit> report_transactions(const Ledger& ledger, const Period& period, const RowSink& sink) {
     for (const Event& event : ledger.events()) {
-        if (!in_period(period, event.ts) || !is_financial_event(event.type)) continue;
+        if (!in_period(period, event.ts)) continue;
+        if (event.type == EventType::Void) {
+            // A void is only a financial row when it reverses a booking.
+            // Voids of user/product/audit events are hidden.
+            auto original = ledger.find_event(event.reverses);
+            if (!original || !is_voidable_financial(original->type)) continue;
+        } else if (!is_financial_event(event.type)) {
+            continue;
+        }
 
-        std::string status = "ok";
+        std::string status = "gebucht";
         if (event.type == EventType::Void)
             status = "Storno";
         else if (is_expense_event(event.type)) {
@@ -1116,6 +1148,24 @@ const char* csv_content_type(CsvFormat format) {
     return "text/csv; charset=utf-8";
 }
 
+namespace {
+
+void iso_week_of(Timestamp ts, int& year, int& week) {
+    const Civil civil = to_berlin(ts);
+    const int64_t days = days_from_civil(civil.year, civil.month, civil.day);
+    const int64_t thursday = days + (4 - iso_weekday_from_days(days));
+    int thursday_year = 1970;
+    int thursday_month = 1;
+    int thursday_day = 1;
+    civil_from_days(thursday, thursday_year, thursday_month, thursday_day);
+    (void)thursday_month;
+    (void)thursday_day;
+    year = thursday_year;
+    week = static_cast<int>((thursday - days_from_civil(thursday_year, 1, 1)) / 7 + 1);
+}
+
+}  // namespace
+
 std::string report_filename(ReportKind kind, const Period& p) {
     const std::string name = report_kind_name(kind);
     char prefix[64];
@@ -1123,9 +1173,25 @@ std::string report_filename(ReportKind kind, const Period& p) {
         std::snprintf(prefix, sizeof(prefix), "kaffeekasse_all");
     } else if (p.kind == PeriodKind::Custom) {
         const Civil from = to_berlin(p.from);
-        const Civil to = to_berlin(p.to > p.from ? p.to - 1 : p.to);
-        std::snprintf(prefix, sizeof(prefix), "kaffeekasse_%04d-%02d-%02d_%04d-%02d-%02d",
-                      from.year, from.month, from.day, to.year, to.month, to.day);
+        if (p.to == std::numeric_limits<Timestamp>::max()) {
+            std::snprintf(prefix, sizeof(prefix), "kaffeekasse_%04d-%02d-%02d_offen", from.year,
+                          from.month, from.day);
+        } else if (p.to <= p.from) {
+            std::snprintf(prefix, sizeof(prefix), "kaffeekasse_%04d-%02d-%02d", from.year,
+                          from.month, from.day);
+        } else {
+            const Civil to = to_berlin(p.to - 1);
+            std::snprintf(prefix, sizeof(prefix), "kaffeekasse_%04d-%02d-%02d_%04d-%02d-%02d",
+                          from.year, from.month, from.day, to.year, to.month, to.day);
+        }
+    } else if (p.kind == PeriodKind::Week) {
+        int year = 1970;
+        int week = 1;
+        iso_week_of(p.from, year, week);
+        std::snprintf(prefix, sizeof(prefix), "kaffeekasse_%04d-W%02d", year, week);
+    } else if (p.kind == PeriodKind::Year) {
+        const Civil from = to_berlin(p.from);
+        std::snprintf(prefix, sizeof(prefix), "kaffeekasse_%04d", from.year);
     } else {
         const Civil from = to_berlin(p.from);
         std::snprintf(prefix, sizeof(prefix), "kaffeekasse_%04d-%02d", from.year, from.month);
