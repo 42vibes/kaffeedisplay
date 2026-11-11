@@ -60,6 +60,35 @@ TEST_CASE("invalid mutation is rejected before persistence") {
     CHECK(f.ledger.events().back().type == EventType::UserArchived);
 }
 
+TEST_CASE("duplicate event id is rejected before persistence") {
+    int id_counter = 0;
+    Ledger ledger([&id_counter](std::string_view prefix) {
+        if (prefix == "evt") return std::string("evt_duplicate");
+        return std::string(prefix) + "_" + std::to_string(++id_counter);
+    });
+    std::vector<Event> persisted;
+    ledger.set_commit_hook(CommitHook{[&persisted](const Event& e) -> Result<Unit> {
+        persisted.push_back(e);
+        return Result<Unit>::ok(Unit{});
+    }});
+
+    auto first = ledger.create_user("Ada", "#D4A373", "", f_now(), TimeSource::Synced);
+    REQUIRE(static_cast<bool>(first));
+    REQUIRE(persisted.size() == 1);
+    const uint64_t next_seq = ledger.next_seq();
+    const std::string head_hash = ledger.head_hash();
+
+    auto second = ledger.create_user("Bob", "#D4A373", "", f_now(), TimeSource::Synced);
+    REQUIRE_FALSE(static_cast<bool>(second));
+    REQUIRE(second.error.has_value());
+    CHECK(second.error->code == "duplicate");
+    CHECK(persisted.size() == 1);
+    CHECK(ledger.events().size() == 1);
+    CHECK(ledger.users().size() == 1);
+    CHECK(ledger.next_seq() == next_seq);
+    CHECK(ledger.head_hash() == head_hash);
+}
+
 TEST_CASE("leaderboard void outside period does not go negative") {
     Fixture f;
     auto u = f.user("Ada");

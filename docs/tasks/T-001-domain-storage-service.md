@@ -23,8 +23,15 @@ This task completes persistence and the service facade so API/UI can integrate.
    excluded from backups.
 3. `KaffeeService` implementation:
    - mutex-serialized mutations, idempotency via `X-Request-Id`.
+   - construct the `Ledger` with an `IdFn` backed by
+     `IPlatform::random_u64()` (`prefix + "_" + 16 lowercase hex chars`).
+     `Ledger()`'s default generator is host/test-only; see ADR 0011.
    - current time from `IPlatform`, with `TimeSource`.
    - single-admin auth: PBKDF2-HMAC-SHA256, sessions, rate limiting, CSRF token.
+   - `settings()` must return a copy with secrets cleared
+     (`admin.password_hash`, `admin.salt`, `network.ap_password`,
+     `network.sta_password`). Keep the frozen `KaffeeService` interface; do not
+     add a separate public-settings accessor without an ADR.
    - settings save/apply, AP/time delegation, backup export/restore.
    - change callback coalescing (never call LVGL from the service thread).
    - max debt enforcement from settings (0 = unlimited).

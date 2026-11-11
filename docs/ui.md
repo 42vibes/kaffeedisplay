@@ -23,7 +23,9 @@ taps never trigger navigation.
 - Current month, `<` / `>` arrows for previous/next month.
 - Ranking by number of products bought. **No balances, no money, no prices.**
 - Top 3 highlighted; bars; scrollable. Guest count shown separately in the footer.
-- Counts are net of voids.
+- Counts are net of voids within the period: purchases booked in the month add
+  one, voids recorded in that same month subtract one. A void recorded in a
+  later period does not change the original month's count.
 - Time-quality warning if the clock is not synced.
 
 ### Page 3 — System

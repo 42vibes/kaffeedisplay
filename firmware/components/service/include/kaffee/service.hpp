@@ -196,6 +196,11 @@ class KaffeeService : public IUiBackend {
     virtual std::string setup_password() const = 0;
 
     // --- Settings / time / AP ---
+    // Returns the effective settings for API/UI consumption. The implementation
+    // MUST return a copy with all secrets cleared: `admin.password_hash`,
+    // `admin.salt`, `network.ap_password` and `network.sta_password` must be
+    // empty in the returned value. Stored credentials never leave the service
+    // through this accessor; authentication uses the dedicated auth path.
     virtual Settings settings() const = 0;
     virtual Result<Unit> save_settings(const Settings& settings, const std::string& request_id) = 0;
     virtual Result<Unit> sync_time(Timestamp epoch_seconds, const std::string& source) = 0;

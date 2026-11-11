@@ -188,6 +188,25 @@ class Ledger {
   public:
     using IdFn = std::function<std::string(std::string_view prefix)>;
 
+    // IDs are produced by the injected `IdFn` as "<prefix>_<16 lowercase hex
+    // chars>". The generator is injected so the domain layer stays free of
+    // platform dependencies.
+    //
+    // The default constructor's generator (`default_id`) is HOST/TEST ONLY: it
+    // is backed by std::random_device/mt19937_64, not by the ESP32 hardware
+    // RNG, and must not be used on a device. KaffeeService must construct its
+    // ledger with an `IdFn` backed by `IPlatform::random_u64()`, e.g.
+    //
+    //   Ledger([&platform](std::string_view prefix) {
+    //       char buf[sizeof("exp_0123456789abcdef")];
+    //       std::snprintf(buf, sizeof(buf), "%.*s_%016llx",
+    //                     static_cast<int>(prefix.size()), prefix.data(),
+    //                     static_cast<unsigned long long>(platform.random_u64()));
+    //       return std::string(buf);
+    //   });
+    //
+    // That keeps generated IDs reboot-safe and collision-free against replayed
+    // history. See docs/adr/0011-id-generation.md.
     Ledger();
     explicit Ledger(IdFn id_fn);
 
@@ -317,6 +336,9 @@ class Ledger {
     Result<Unit> validate_event(const Event& event) const;
 };
 
+// Host/test-only fallback ID generator. Device code (KaffeeService) must inject
+// an IdFn backed by IPlatform::random_u64() instead; see
+// docs/adr/0011-id-generation.md.
 std::string default_id(std::string_view prefix);
 
 }  // namespace kaffee

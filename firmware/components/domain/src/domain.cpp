@@ -28,6 +28,8 @@ std::string compact_id(std::string_view prefix, uint64_t value) {
 
 }  // namespace
 
+// Host/test-only fallback generator. Device code must pass an IdFn backed by
+// IPlatform::random_u64() to Ledger (see docs/adr/0011-id-generation.md).
 std::string default_id(std::string_view prefix) {
     static thread_local std::mt19937_64 rng{std::random_device{}()};
     static std::atomic<uint64_t> counter{0};
@@ -160,6 +162,13 @@ Result<Event> Ledger::commit_event(Event event, std::string request_id) {
 
 Result<Unit> Ledger::validate_event(const Event& event) const {
     // Validate everything that can fail before mutating state.
+    //
+    // Event IDs must be unique across the whole ledger. Checking this here (and
+    // not only in apply()) guarantees that commit_event never invokes the
+    // persistence hook for an event that cannot be applied afterwards.
+    if (!event.id.empty() && event_index_.count(event.id))
+        return Result<Unit>::fail("duplicate", "event already exists");
+
     switch (event.type) {
         case EventType::UserCreated:
             if (event.user_id.empty() || event.user_name.empty())
