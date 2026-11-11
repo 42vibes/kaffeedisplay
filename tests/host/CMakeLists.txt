@@ -16,18 +16,30 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 set(DOMAIN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/domain)
+set(STORAGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/storage)
+set(SERVICE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/service)
 
 add_executable(kaffee_tests
   domain_test.cpp
+  storage_test.cpp
+  service_test.cpp
+  auth_test.cpp
   ${DOMAIN_DIR}/src/domain.cpp
   ${DOMAIN_DIR}/src/json.cpp
   ${DOMAIN_DIR}/src/sha256.cpp
+  ${STORAGE_DIR}/src/journal_store.cpp
+  ${STORAGE_DIR}/src/file_store.cpp
+  ${SERVICE_DIR}/src/auth.cpp
+  ${SERVICE_DIR}/src/service.cpp
 )
 
 target_include_directories(kaffee_tests PRIVATE
   ${DOMAIN_DIR}/include
   ${DOMAIN_DIR}/third_party
+  ${STORAGE_DIR}/include
+  ${SERVICE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
 )
 
-target_compile_definitions(kaffee_tests PRIVATE DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN)
+set_source_files_properties(domain_test.cpp PROPERTIES COMPILE_DEFINITIONS
+  "DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN")
