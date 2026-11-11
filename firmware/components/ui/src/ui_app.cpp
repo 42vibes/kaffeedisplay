@@ -384,7 +384,12 @@ void UiAppImpl::apply_hold_state() {
 
 std::string UiAppImpl::next_request_id(const char* prefix) {
     ++request_counter_;
-    return std::string("ui-") + prefix + "-" + std::to_string(request_counter_) + "-" +
+    const TimeInfo time = backend_.time_info();
+    const SystemStats stats = backend_.stats();
+    // Uptime + wall clock make the id unique across reboots even though the
+    // counter and LVGL tick start at zero again.
+    return std::string("ui-") + prefix + "-" + std::to_string(stats.uptime_s) + "-" +
+           std::to_string(time.now) + "-" + std::to_string(request_counter_) + "-" +
            std::to_string(lv_tick_get());
 }
 
