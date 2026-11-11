@@ -16,18 +16,21 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 set(DOMAIN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/domain)
+set(NET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/net)
 
 add_executable(kaffee_tests
+  test_main.cpp
   domain_test.cpp
+  net_pure_test.cpp
   ${DOMAIN_DIR}/src/domain.cpp
   ${DOMAIN_DIR}/src/json.cpp
   ${DOMAIN_DIR}/src/sha256.cpp
+  ${NET_DIR}/src/net_pure.cpp
 )
 
 target_include_directories(kaffee_tests PRIVATE
   ${DOMAIN_DIR}/include
   ${DOMAIN_DIR}/third_party
+  ${NET_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
 )
-
-target_compile_definitions(kaffee_tests PRIVATE DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN)
