@@ -71,6 +71,14 @@ class IPlatform {
 
     // Called after a successful ledger mutation so the UI can refresh.
     virtual void notify_ledger_changed() = 0;
+
+    // Optional listener for AP shutdowns that happen outside the service (for
+    // example the AP auto-off timer). The service uses it to drop admin
+    // sessions. Device platforms should override; the default is a no-op so
+    // existing fakes keep working.
+    virtual void set_ap_stopped_callback(std::function<void()> callback) {
+        (void)callback;
+    }
 };
 
 struct Session {
@@ -86,8 +94,10 @@ using ChangeCallback = std::function<void()>;
 class IUiBackend {
   public:
     virtual ~IUiBackend() = default;
-    virtual const std::vector<User>& users() const = 0;
-    virtual const std::vector<Product>& products() const = 0;
+    // Snapshot accessors return copies. Returning references after releasing
+    // the service mutex would race with mutations; see ADR 0012.
+    virtual std::vector<User> users() const = 0;
+    virtual std::vector<Product> products() const = 0;
     virtual std::optional<User> find_user(const std::string& id) const = 0;
     virtual std::optional<Product> find_product(const std::string& id) const = 0;
     virtual Cents balance(const std::string& user_id) const = 0;
@@ -120,8 +130,9 @@ class KaffeeService : public IUiBackend {
     virtual ~KaffeeService() = default;
 
     // --- UI-facing ---
-    virtual const std::vector<User>& users() const = 0;
-    virtual const std::vector<Product>& products() const = 0;
+    // The vector accessors return copies, not references; see ADR 0012.
+    virtual std::vector<User> users() const = 0;
+    virtual std::vector<Product> products() const = 0;
     virtual std::optional<User> find_user(const std::string& id) const = 0;
     virtual std::optional<Product> find_product(const std::string& id) const = 0;
     virtual Cents balance(const std::string& user_id) const = 0;
@@ -178,9 +189,9 @@ class KaffeeService : public IUiBackend {
     virtual Result<Event> record_cash_count(Cents counted_cents, const std::string& note,
                                             const std::string& request_id) = 0;
 
-    virtual const std::vector<Event>& events() const = 0;
-    virtual const std::vector<Expense>& expenses() const = 0;
-    virtual const std::vector<CashCount>& cash_counts() const = 0;
+    virtual std::vector<Event> events() const = 0;
+    virtual std::vector<Expense> expenses() const = 0;
+    virtual std::vector<CashCount> cash_counts() const = 0;
 
     // --- Auth (single admin) ---
     virtual Result<Session> login(const std::string& username, const std::string& password,

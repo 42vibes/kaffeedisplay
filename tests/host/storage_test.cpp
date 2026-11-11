@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "kaffee/file_store.hpp"
@@ -112,6 +113,7 @@ TEST_CASE("file store replays journal into the ledger") {
     CHECK(info.mounted);
     CHECK_FALSE(info.degraded);
     CHECK(info.event_count == scenario.events.size());
+    CHECK(info.journal_events == scenario.events.size());
     CHECK(info.used_bytes > 0);
     CHECK(info.total_bytes > 0);
 }
@@ -305,6 +307,128 @@ TEST_CASE("mount reports a filesystem error instead of crashing") {
     REQUIRE_FALSE(static_cast<bool>(mounted));
     CHECK(mounted.error->code == "storage");
     CHECK_FALSE(store.info().mounted);
+}
+
+TEST_CASE("short append rolls back and keeps the journal usable") {
+    TempDir dir;
+    const Scenario scenario = make_scenario(2);
+    REQUIRE(scenario.events.size() >= 4);
+
+    FileEventStore store((dir.path / "store").string());
+    REQUIRE(static_cast<bool>(store.mount()));
+    for (size_t i = 0; i + 1 < scenario.events.size(); ++i) {
+        REQUIRE(static_cast<bool>(store.append(scenario.events[i])));
+    }
+    const uint64_t size_before = fs::file_size(store.journal_path());
+
+    store.set_fault_injection(JournalFault::ShortAppend);
+    auto failed = store.append(scenario.events.back());
+    REQUIRE_FALSE(static_cast<bool>(failed));
+    CHECK(fs::file_size(store.journal_path()) == size_before);
+    CHECK(store.degraded());
+
+    // The rollback succeeded, so a retry may append normally.
+    REQUIRE(static_cast<bool>(store.append(scenario.events.back())));
+    Ledger ledger;
+    auto loaded = store.load(ledger);
+    REQUIRE(static_cast<bool>(loaded));
+    CHECK(ledger.events().size() == scenario.events.size());
+    CHECK(ledger.head_hash() == scenario.events.back().hash);
+}
+
+#if defined(__linux__)
+TEST_CASE("ENOSPC append marks the store degraded and refuses further writes") {
+    TempDir dir;
+    const Scenario scenario = make_scenario(1);
+    const fs::path root = dir.path / "store";
+    fs::create_directories(root);
+    std::error_code ec;
+    fs::create_symlink("/dev/full", root / "journal.jsonl", ec);
+    REQUIRE_FALSE(ec);
+
+    FileEventStore store(root.string());
+    REQUIRE(static_cast<bool>(store.mount()));
+
+    auto failed = store.append(scenario.events.front());
+    REQUIRE_FALSE(static_cast<bool>(failed));
+    CHECK(failed.error->code == "storage");
+    CHECK(store.degraded());
+
+    auto refused = store.append(scenario.events.back());
+    REQUIRE_FALSE(static_cast<bool>(refused));
+    CHECK(store.info().degraded);
+}
+#endif
+
+TEST_CASE("quarantine truncates in place and tolerates a failed corrupt dump") {
+    TempDir dir;
+    const Scenario scenario = make_scenario(2);
+    REQUIRE(scenario.events.size() >= 4);
+
+    std::string good;
+    for (size_t i = 0; i < 2; ++i) {
+        good += event_to_json(scenario.events[i]).dump();
+        good.push_back('\n');
+    }
+    auto tampered = event_to_json(scenario.events[2]);
+    tampered["amount_cents"] = 424242;
+    const std::string bad_line = tampered.dump() + "\n";
+
+    const fs::path root = dir.path / "store";
+    fs::create_directories(root);
+    {
+        std::ofstream out(root / "journal.jsonl", std::ios::binary);
+        out << good << bad_line;
+    }
+    // Force the best-effort .corrupt dump to fail: renaming over a directory
+    // is not possible.
+    fs::create_directories(root / "journal.jsonl.corrupt");
+
+    struct stat before{};
+    REQUIRE(::stat((root / "journal.jsonl").c_str(), &before) == 0);
+
+    FileEventStore store(root.string());
+    REQUIRE(static_cast<bool>(store.mount()));
+    Ledger ledger;
+    auto loaded = store.load(ledger);
+    REQUIRE(static_cast<bool>(loaded));
+    CHECK(*loaded.value == 2);
+    CHECK(ledger.events().size() == 2);
+    CHECK(store.last_load_quarantined());
+    CHECK(fs::is_directory(root / "journal.jsonl.corrupt"));
+
+    // Truncated in place: same inode, only the valid prefix remains.
+    struct stat after{};
+    REQUIRE(::stat((root / "journal.jsonl").c_str(), &after) == 0);
+    CHECK(after.st_ino == before.st_ino);
+    CHECK(fs::file_size(root / "journal.jsonl") == good.size());
+}
+
+TEST_CASE("a snapshot that fails read-back validation never drops the journal") {
+    TempDir dir;
+    const Scenario scenario = make_scenario(3);
+    FileEventStore store((dir.path / "store").string());
+    REQUIRE(static_cast<bool>(store.mount()));
+    for (const Event& event : scenario.events) {
+        REQUIRE(static_cast<bool>(store.append(event)));
+    }
+    Ledger ledger;
+    REQUIRE(static_cast<bool>(store.load(ledger)));
+    const uint64_t journal_size = fs::file_size(store.journal_path());
+
+    store.set_fault_injection(JournalFault::SnapshotCorruption);
+    auto compacted = store.compact(ledger);
+    REQUIRE_FALSE(static_cast<bool>(compacted));
+    CHECK(compacted.error->code == "snapshot");
+    CHECK(fs::file_size(store.journal_path()) == journal_size);
+    CHECK_FALSE(fs::exists(store.snapshot_path('a')));
+    CHECK_FALSE(fs::exists(store.snapshot_path('b')));
+
+    Ledger reloaded;
+    auto loaded = store.load(reloaded);
+    REQUIRE(static_cast<bool>(loaded));
+    CHECK(reloaded.events().size() == scenario.events.size());
+    CHECK(reloaded.head_hash() == scenario.events.back().hash);
 }
 
 TEST_CASE("json settings store round-trips secrets") {

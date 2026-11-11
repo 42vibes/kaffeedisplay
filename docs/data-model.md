@@ -96,13 +96,19 @@ id, ts, counted_cents, expected_cents, difference_cents, note
 - `snapshot.a.json` / `snapshot.b.json`: `{version, last_seq, head_hash, events[]}`.
 - Boot: newest valid snapshot → replay journal where `seq > last_seq` → verify
   chain and state.
-- Corrupt tail: stop at the first invalid event, keep a `.corrupt` copy, expose a
-  diagnostics warning.
-- Compaction: write inactive snapshot, fsync, rotate journal, delete old.
+- Corrupt tail: stop at the first invalid event, copy the tail to `.corrupt`
+  best-effort and truncate `journal.jsonl` in place (`ftruncate` + fsync). A
+  failed copy or a full filesystem must not fail boot; append attempts are
+  refused until the next successful load if truncation fails.
+- Compaction: write the inactive snapshot, read it back and replay-validate the
+  hash chain, then truncate the journal in place. The service schedules
+  compaction after 256 journal events or when the partition is 90% full.
 - Host tests use the same layout in a plain directory (`FileEventStore`). The
   device uses LittleFS (`LittleFsEventStore`) with the journal core shared.
 - Journal appends are `fflush` + `fsync`; snapshot and journal replacement use a
-  temporary file, `fsync`, rename and directory `fsync`.
+  temporary file, `fsync`, rename and directory `fsync`. A failed append is
+  rolled back to the pre-write offset; if rollback fails the store marks itself
+  degraded and refuses further appends.
 
 ## Backup JSON
 

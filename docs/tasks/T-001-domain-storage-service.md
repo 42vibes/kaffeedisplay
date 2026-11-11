@@ -60,21 +60,42 @@ This task completes persistence and the service facade so API/UI can integrate.
 
 PR: https://github.com/Babo96/kaffeedisplay/pull/3
 
-Implementation notes:
+Implementation notes (post-review):
 
 - Host storage: `JournalEventStore` (portable core) + `FileEventStore` (host
   filesystem backend). Journal is `journal.jsonl`; snapshots are
   `snapshot.a.json` / `snapshot.b.json`; corrupt tails are copied to
-  `journal.jsonl.corrupt`. Appends `fflush` + `fsync`; snapshots and journal
-  rotation use `tmp` + rename + directory fsync.
+  `journal.jsonl.corrupt` best-effort and the journal is truncated in place
+  (`ftruncate` + fsync). A failed `.corrupt` dump or full filesystem does not
+  fail boot; appends are refused until a later successful load if truncation
+  fails.
+- Appends track the pre-write offset. Short writes and `fflush`/`fsync` failures
+  roll the file back to that offset and fsync; if rollback fails the store marks
+  itself degraded and refuses further appends. Covered by a short-write fault
+  test and a `/dev/full` ENOSPC test.
+- Compaction writes the inactive snapshot, reads it back and replay-validates
+  the complete hash chain before truncating the journal. A corrupt snapshot
+  leaves the journal untouched. The service schedules compaction after 256
+  journal events or at 90% partition usage.
 - Device storage: `LittleFsEventStore` (`#ifdef ESP_PLATFORM`) reuses the same
-  journal core with ESP-LittleFS capacity reporting. `NvsSettingsStore` keeps
-  the settings JSON blob (including secrets) in NVS. **Device adapters were not
-  compiled here: this worktree has no ESP-IDF toolchain.**
+  journal core and passes the explicit `storage` partition label to
+  `esp_littlefs_info`. `NvsSettingsStore` keeps the settings JSON blob (including
+  secrets) in NVS. Both compiled in the Docker ESP-IDF 5.5 build.
 - Service: PIMPL implementation with `std::mutex`, ledger commit hook ->
   `IEventStore::append` before state, `IPlatform::random_u64()` ids, PBKDF2
-  (50 000 iterations), session idle/absolute expiry, exponential login backoff,
-  CSRF, debt limit, backup without secrets, and `undo_booking` actor `ui`.
+  (50 000 iterations, computed outside the global mutex), sessions and rate
+  limiting on monotonic uptime, CSRF separate from the session token, debt limit,
+  backup without secrets, and `undo_booking` actor `ui`.
+- Idempotency is checked against `find_request()` at the top of every mutation,
+  before validation/state checks (including void, undo, archive, delete and debt
+  limits).
+- Change notifications are queued and coalesced on a dedicated notifier thread;
+  the callback never runs on the mutating thread. Vector accessors return stable
+  copies (frozen-interface change, ADR 0012). AP auto-off is reported through an
+  additive `IPlatform::set_ap_stopped_callback` hook and clears sessions.
+- A settings load failure now fails `KaffeeService::create` instead of
+  regenerating credentials. `import_backup` saves settings before replacing the
+  ledger, rolls back settings on failure and checks reload results.
 - Initial admin password is generated on first boot and kept in RAM for the
   current boot only; `change_admin_password` clears it and writes an audit event.
   A reboot before the first change requires physical/factory reset (see
@@ -86,7 +107,10 @@ Implementation notes:
 `make test-host` output:
 
 ```
-[doctest] test cases:    39 |    39 passed | 0 failed | 0 skipped
-[doctest] assertions: 10264 | 10264 passed | 0 failed |
+[doctest] test cases:    48 |    48 passed | 0 failed | 0 skipped
+[doctest] assertions: 10735 | 10735 passed | 0 failed |
 [doctest] Status: SUCCESS!
 ```
+
+Docker firmware build (`espressif/idf:release-v5.5`, `idf.py build`): SUCCESS
+(`kaffeekasse.bin`, 0x3d740 bytes, 92% app partition free).

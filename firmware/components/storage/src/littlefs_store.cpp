@@ -74,7 +74,9 @@ Result<Unit> LittleFsEventStore::sync_dir() {
 uint64_t LittleFsEventStore::total_bytes() const {
     size_t total = 0;
     size_t used = 0;
-    if (esp_littlefs_info(nullptr, &total, &used) != ESP_OK) return 0;
+    // The project partition table names the LittleFS data partition "storage";
+    // do not rely on CONFIG_LITTLEFS_PARTITION_LABEL.
+    if (esp_littlefs_info("storage", &total, &used) != ESP_OK) return 0;
     (void)used;
     return static_cast<uint64_t>(total);
 }

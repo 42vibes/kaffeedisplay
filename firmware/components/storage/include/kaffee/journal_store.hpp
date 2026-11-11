@@ -8,6 +8,16 @@
 
 namespace kaffee {
 
+// Test/diagnostic fault injection. Production code never sets a fault.
+enum class JournalFault {
+    None,
+    // Write one byte less than the event line, exercising the append rollback.
+    ShortAppend,
+    // Replace the just-written snapshot with garbage before read-back
+    // validation, exercising the compaction safety check.
+    SnapshotCorruption,
+};
+
 // Portable append-only journal + A/B snapshots. The filesystem specifics (mkdir,
 // rename, capacity, directory fsync) are supplied by a platform backend.
 //
@@ -39,7 +49,13 @@ class JournalEventStore : public IEventStore {
         return quarantined_;
     }
     bool degraded() const {
-        return degraded_;
+        return degraded_ || append_failed_;
+    }
+
+    // Fault injection for host tests. Cleared automatically after one triggered
+    // operation.
+    void set_fault_injection(JournalFault fault) {
+        fault_ = fault;
     }
 
   protected:
@@ -54,6 +70,10 @@ class JournalEventStore : public IEventStore {
     Result<Unit> open_journal_append();
     void close_journal();
     Result<Unit> write_file_atomic(const std::string& path, const std::string& contents);
+    Result<Unit> validate_snapshot_file(const std::string& path, size_t expected_events,
+                                        uint64_t expected_last_seq,
+                                        const std::string& expected_head_hash);
+    bool truncate_journal(uint64_t offset);
     Result<uint32_t> replay_journal(Ledger& ledger);
     Result<Unit> quarantine_from(const std::string& journal, size_t offset);
 
@@ -63,7 +83,11 @@ class JournalEventStore : public IEventStore {
     bool mounted_ = false;
     bool degraded_ = false;
     bool quarantined_ = false;
+    bool append_failed_ = false;
+    uint64_t journal_size_ = 0;
+    uint32_t journal_events_ = 0;
     uint32_t event_count_ = 0;
+    JournalFault fault_ = JournalFault::None;
 };
 
 }  // namespace kaffee

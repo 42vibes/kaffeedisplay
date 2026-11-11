@@ -12,15 +12,23 @@ for the duration of the admin window, but never to the internet.
 ## Admin authentication
 
 - Single account `admin`; password stored as PBKDF2-HMAC-SHA256 with a random
-  16-byte salt, 50 000 iterations, constant-time compare.
+  16-byte salt, 50 000 iterations, constant-time compare. Password hashing runs
+  outside the global service mutex.
 - Initial password is generated on first boot and shown once on the setup screen.
   It is kept in RAM for the current boot; reboot before the first change requires
   physical/factory reset. Force change on first login (recommended).
-- Login rate limit: token bucket per client IP, exponential backoff after 5
-  failures, log attempts.
+- Login rate limit: fixed 60 s failure window per client IP. After 5 failures the
+  client backs off exponentially (5 s doubling up to 300 s); a successful login
+  resets the counter. The first threshold breach writes one `admin_login_locked`
+  audit event; individual failed attempts are counted in RAM and not written to
+  the ledger.
 - Session: 128-bit random token in RAM, `HttpOnly; SameSite=Strict` cookie,
-  30 min idle / 8 h absolute. Sessions are cleared when the AP stops.
-- CSRF: `X-CSRF-Token` must match the session token on all mutating requests.
+  30 min idle / 8 h absolute. Deadlines are measured on monotonic uptime, so a
+  backwards or unset wall clock cannot extend a session. Sessions and login
+  backoff state are cleared when the AP stops or its timer expires.
+- CSRF: `X-CSRF-Token` must match the session's separate 128-bit CSRF token on
+  all mutating requests. The CSRF token is not the session token and is never
+  accepted in place of it.
 - Password reset requires physical access (serial CLI) or factory reset.
 
 ## Network

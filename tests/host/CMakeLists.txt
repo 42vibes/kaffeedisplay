@@ -41,5 +41,8 @@ target_include_directories(kaffee_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
 )
 
+find_package(Threads REQUIRED)
+target_link_libraries(kaffee_tests PRIVATE Threads::Threads)
+
 set_source_files_properties(domain_test.cpp PROPERTIES COMPILE_DEFINITIONS
   "DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN")

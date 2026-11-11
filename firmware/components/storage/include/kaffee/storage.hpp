@@ -12,6 +12,9 @@ struct StorageInfo {
     uint64_t used_bytes = 0;
     uint64_t total_bytes = 0;
     uint32_t event_count = 0;
+    // Events currently stored in the journal (not yet folded into a snapshot).
+    // Used to schedule compaction.
+    uint32_t journal_events = 0;
     bool mounted = false;
     bool degraded = false;
 };
