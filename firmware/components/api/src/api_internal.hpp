@@ -2,6 +2,7 @@
 
 // Internal API component plumbing. Not installed as a public header.
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -12,6 +13,7 @@
 
 #include "esp_http_server.h"
 #include "kaffee/api.hpp"
+#include "kaffee/api_routes.hpp"
 #include "kaffee/api_util.hpp"
 #include "kaffee/domain.hpp"
 #include "kaffee/json.hpp"
@@ -24,12 +26,6 @@ constexpr size_t kMaxJsonBody = 32u * 1024u;
 constexpr size_t kMaxRestoreBody = 4u * 1024u * 1024u;
 constexpr size_t kMaxOtaBytes = 3u * 1024u * 1024u;
 constexpr const char* kApiPrefix = "/api/v1";
-
-enum class AuthPolicy {
-    None,         // public route (health, login)
-    Session,      // valid session cookie
-    SessionCsrf,  // valid session + matching X-CSRF-Token
-};
 
 class ApiServerImpl;
 
@@ -45,16 +41,8 @@ struct RequestContext {
 
 using RouteHandler = esp_err_t (*)(RequestContext&);
 
-struct Route {
-    httpd_method_t method;
-    const char* pattern;  // absolute path, e.g. "/api/v1/users/{id}"
-    AuthPolicy auth;
-    RouteHandler handler;
-    bool require_request_id;
-};
-
-// Route table, defined in api_handlers.cpp.
-const std::vector<Route>& routes();
+// Handlers in the same order as `route_specs()` (checked at dispatch time).
+const std::vector<RouteHandler>& route_handlers();
 
 class ApiServerImpl final : public ApiServer {
   public:
@@ -76,11 +64,12 @@ class ApiServerImpl final : public ApiServer {
     void schedule_reboot(uint32_t delay_ms);
 
   private:
-    Result<Unit> register_routes();
+    Result<Unit> stop_locked();
     KaffeeService& service_;
     IPlatform& platform_;
     httpd_handle_t server_ = nullptr;
     mutable std::mutex state_mutex_;
+    std::atomic<bool> stop_pending_{false};
 };
 
 // --- Responses -----------------------------------------------------------
@@ -104,6 +93,12 @@ std::string req_query(httpd_req_t* req);  // query string without '?'
 std::string client_ip(httpd_req_t* req);
 Result<std::string> read_body(httpd_req_t* req, size_t limit);
 Result<nlohmann::json> read_json_body(httpd_req_t* req, size_t limit);
+// Same as read_json_body but rejects non-object roots with 400.
+Result<nlohmann::json> read_json_object(httpd_req_t* req, size_t limit);
+// Re-issues the session cookie (sliding expiry); used by /auth/me and login.
+void set_session_cookie(httpd_req_t* req, std::string_view token, Timestamp expires_at,
+                        Timestamp now);
+void clear_session_cookie(httpd_req_t* req);
 
 // Copies the error out of a failed Result<T>.
 template <typename T>

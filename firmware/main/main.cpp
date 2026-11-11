@@ -4,6 +4,25 @@
 #include "esp_ota_ops.h"
 #include "nvs_flash.h"
 
+namespace {
+
+// Boot health gate for the dual-OTA rollback window.
+//
+// The OTA API writes the inactive slot, calls esp_ota_set_boot_partition() and
+// reboots with rollback armed. The image is only confirmed once this check has
+// passed; a crash or a failure here leaves rollback armed so the bootloader can
+// return to the previous slot.
+//
+// TODO(main): once the real boot sequence is wired, also verify that storage
+// mounted, KaffeeService was created, the display/UI task runs and the network
+// manager reached a stable state. Keep this check cheap and bounded (no long
+// network waits) so a broken image cannot confirm itself.
+bool boot_health_check() {
+    return true;
+}
+
+}  // namespace
+
 extern "C" void app_main(void) {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -13,7 +32,11 @@ extern "C" void app_main(void) {
     ESP_ERROR_CHECK(err);
     ESP_LOGI("kaffee", "Kaffeekasse booting: skeleton build");
     std::printf("Kaffeekasse skeleton\n");
-    // A future health check runs before this point; for the skeleton, a clean
-    // boot is enough to cancel rollback of the running image.
-    esp_ota_mark_app_valid_cancel_rollback();
+
+    if (boot_health_check()) {
+        ESP_LOGI("kaffee", "health check passed, confirming OTA image");
+        esp_ota_mark_app_valid_cancel_rollback();
+    } else {
+        ESP_LOGE("kaffee", "health check failed, leaving OTA rollback armed");
+    }
 }

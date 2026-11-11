@@ -4,6 +4,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include "esp_log.h"
 #include "esp_system.h"
@@ -21,29 +22,95 @@ constexpr const char* kTag = "kaffee.api";
 // request at a time, but thread_local keeps this correct if that ever changes.
 thread_local std::string t_response_request_id;
 
+httpd_method_t to_httpd_method(RouteMethod method) {
+    switch (method) {
+        case RouteMethod::Get:
+            return HTTP_GET;
+        case RouteMethod::Post:
+            return HTTP_POST;
+        case RouteMethod::Put:
+            return HTTP_PUT;
+        case RouteMethod::Patch:
+            return HTTP_PATCH;
+        case RouteMethod::Delete:
+            return HTTP_DELETE;
+    }
+    return HTTP_GET;
+}
+
+// esp_http_server names its worker task "httpd"; httpd_stop() must not be called
+// from that task, so /ap/stop defers server teardown to a helper task.
+bool is_httpd_task() {
+    const char* name = pcTaskGetName(nullptr);
+    return name != nullptr && std::strcmp(name, "httpd") == 0;
+}
+
+void deferred_stop_task(void* arg) {
+    auto* self = static_cast<ApiServerImpl*>(arg);
+    // Give the current response a moment to flush before the server stops.
+    vTaskDelay(pdMS_TO_TICKS(50));
+    (void)self->stop();
+    vTaskDelete(nullptr);
+}
+
+esp_err_t send_captive_probe(ApiServerImpl& server, httpd_req_t* req, CaptiveProbe probe) {
+    if (probe == CaptiveProbe::Generate204) {
+        httpd_resp_set_status(req, status_text(204));
+        httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+        set_security_headers(req);
+        return httpd_resp_send(req, nullptr, 0);
+    }
+    if (probe == CaptiveProbe::Redirect) {
+        // Captive probes only make sense while the AP is active. The net
+        // component owns the AP lifecycle; this route only reflects it.
+        NetworkStatus network = server.service().network_status();
+        if (!network.ap_active) {
+            return send_error(req, 404, "not_found", "Ressource nicht gefunden");
+        }
+        const std::string ip = network.ap_ip.empty() ? "192.168.4.1" : network.ap_ip;
+        const std::string location = "http://" + ip + "/";
+        httpd_resp_set_status(req, "302 Found");
+        httpd_resp_set_hdr(req, "Location", location.c_str());
+        httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+        set_security_headers(req);
+        return httpd_resp_send(req, nullptr, 0);
+    }
+    return send_error(req, 404, "not_found", "Ressource nicht gefunden");
+}
+
 esp_err_t dispatch_entry(httpd_req_t* req) {
     auto* self = static_cast<ApiServerImpl*>(req->user_ctx);
     if (self == nullptr) return ESP_FAIL;
 
     const std::string path = req_path(req);
     if (path.rfind("/api/", 0) != 0) {
-        if (req->method != HTTP_GET && req->method != HTTP_HEAD) {
+        const CaptiveProbe probe = captive_probe_kind(path);
+        if (probe != CaptiveProbe::None) return send_captive_probe(*self, req, probe);
+        if (req->method != HTTP_GET) {
             return send_error(req, 405, "method_not_allowed", "Methode nicht erlaubt");
         }
         return handle_static(req);
     }
 
-    const std::string query = req_query(req);
+    const std::vector<RouteSpec>& specs = route_specs();
+    const std::vector<RouteHandler>& handlers = route_handlers();
+    if (specs.size() != handlers.size()) {
+        ESP_LOGE(kTag, "route table mismatch: %u specs, %u handlers",
+                 static_cast<unsigned>(specs.size()), static_cast<unsigned>(handlers.size()));
+        return send_error(req, 500, "internal_error", "Interner Fehler");
+    }
+
     bool path_matched = false;
-    for (const Route& route : routes()) {
+    for (size_t i = 0; i < specs.size(); ++i) {
+        const RouteSpec& spec = specs[i];
         RouteParams params;
-        if (!match_path(route.pattern, path, params)) continue;
+        if (!match_path(spec.pattern, path, params)) continue;
         path_matched = true;
-        if (route.method != req->method) continue;
+        if (to_httpd_method(spec.method) != req->method) continue;
 
         RequestContext ctx{*self, req, std::move(params), {}, {}, false, {}};
 
-        if (route.auth != AuthPolicy::None) {
+        if (spec.auth != AuthPolicy::None) {
             auto cookie = req_header(req, "Cookie");
             auto token = cookie ? cookie_value(*cookie, "kaffee_session") : std::nullopt;
             if (!token || token->empty()) {
@@ -57,7 +124,13 @@ esp_err_t dispatch_entry(httpd_req_t* req) {
             ctx.session = *session.value;
             ctx.authenticated = true;
 
-            if (route.auth == AuthPolicy::SessionCsrf) {
+            if (self->service().must_change_admin_password() &&
+                !route_allowed_when_password_must_change(spec)) {
+                return send_error(req, 403, "password_change_required",
+                                  "Passwort muss zuerst geändert werden");
+            }
+
+            if (spec.auth == AuthPolicy::SessionCsrf) {
                 auto csrf = req_header(req, "X-CSRF-Token");
                 if (!csrf || csrf->empty() || !self->service().validate_csrf(*token, *csrf)) {
                     return send_error(req, 403, "csrf_failed",
@@ -68,10 +141,8 @@ esp_err_t dispatch_entry(httpd_req_t* req) {
 
         auto request_id = req_header(req, "X-Request-Id");
         std::string trimmed = request_id ? trim(*request_id) : std::string();
-        if (!trimmed.empty() && is_valid_request_id(trimmed)) {
-            ctx.request_id = trimmed;
-        }
-        if (route.require_request_id) {
+        if (!trimmed.empty() && is_valid_request_id(trimmed)) ctx.request_id = trimmed;
+        if (spec.require_request_id) {
             if (trimmed.empty()) {
                 return send_error(req, 400, "missing_request_id",
                                   "Header X-Request-Id ist erforderlich");
@@ -85,7 +156,7 @@ esp_err_t dispatch_entry(httpd_req_t* req) {
         t_response_request_id = ctx.request_id;
         esp_err_t result = ESP_OK;
         try {
-            result = route.handler(ctx);
+            result = handlers[i](ctx);
         } catch (...) {
             result = send_error(req, 500, "internal_error", "Interner Fehler");
         }
@@ -114,6 +185,10 @@ ApiServerImpl::ApiServerImpl(KaffeeService& service, IPlatform& platform)
 
 ApiServerImpl::~ApiServerImpl() {
     stop();
+    // A deferred stop may still be queued from a request handler.
+    for (int i = 0; i < 100 && stop_pending_; ++i) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }
 
 Result<Unit> ApiServerImpl::start() {
@@ -126,8 +201,9 @@ Result<Unit> ApiServerImpl::start() {
     config.max_uri_handlers = 8;
     config.stack_size = 10240;
     config.lru_purge_enable = true;
-    config.recv_wait_timeout = 30;
-    config.send_wait_timeout = 30;
+    // Uploads (OTA) must not pin a socket for long once the client stalls.
+    config.recv_wait_timeout = 10;
+    config.send_wait_timeout = 10;
     config.uri_match_fn = httpd_uri_match_wildcard;
 
     httpd_handle_t server = nullptr;
@@ -158,10 +234,31 @@ Result<Unit> ApiServerImpl::start() {
 Result<Unit> ApiServerImpl::stop() {
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (server_ == nullptr) return Result<Unit>::ok(Unit{});
+    if (is_httpd_task()) {
+        // /ap/stop runs inside the httpd task; calling httpd_stop() here would
+        // deadlock. Defer teardown and let the current response finish.
+        if (!stop_pending_.exchange(true)) {
+            if (xTaskCreate(&deferred_stop_task, "api_stop", 3072, this, 5, nullptr) != pdPASS) {
+                stop_pending_ = false;
+                return Result<Unit>::fail("unavailable",
+                                          "HTTP-Server konnte nicht gestoppt werden");
+            }
+        }
+        return Result<Unit>::ok(Unit{});
+    }
+    return stop_locked();
+}
+
+Result<Unit> ApiServerImpl::stop_locked() {
+    if (server_ == nullptr) {
+        stop_pending_ = false;
+        return Result<Unit>::ok(Unit{});
+    }
     httpd_handle_t server = server_;
     server_ = nullptr;
     esp_err_t err = httpd_stop(server);
     log_ring_uninstall();
+    stop_pending_ = false;
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(kTag, "httpd_stop failed: %s", esp_err_to_name(err));
         return Result<Unit>::fail("unavailable", "HTTP-Server konnte nicht gestoppt werden");
@@ -250,9 +347,8 @@ esp_err_t send_error(httpd_req_t* req, int status, std::string_view code,
 }
 
 esp_err_t send_service_error(httpd_req_t* req, const Error& error) {
-    const std::string code = error.code.empty() ? "internal_error" : error.code;
-    const std::string message = error.message.empty() ? "Unerwarteter Fehler" : error.message;
-    return send_error(req, http_status_for_error(code), code, message);
+    const ErrorMapping mapping = map_service_error(error);
+    return send_error(req, mapping.status, mapping.code, mapping.message);
 }
 
 esp_err_t send_no_content(httpd_req_t* req) {
@@ -364,6 +460,32 @@ Result<nlohmann::json> read_json_body(httpd_req_t* req, size_t limit) {
     return Result<nlohmann::json>::ok(std::move(parsed));
 }
 
+Result<nlohmann::json> read_json_object(httpd_req_t* req, size_t limit) {
+    Result<nlohmann::json> body = read_json_body(req, limit);
+    if (!body) return body;
+    if (!body.value->is_object()) {
+        return Result<nlohmann::json>::fail("invalid_input", "JSON-Objekt erwartet");
+    }
+    return body;
+}
+
+void set_session_cookie(httpd_req_t* req, std::string_view token, Timestamp expires_at,
+                        Timestamp now) {
+    int64_t max_age = expires_at - now;
+    if (max_age < 60) max_age = 60;
+    if (max_age > 8 * 3600) max_age = 8 * 3600;
+    char cookie[256];
+    std::snprintf(cookie, sizeof(cookie),
+                  "kaffee_session=%.*s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%lld",
+                  static_cast<int>(token.size()), token.data(), static_cast<long long>(max_age));
+    httpd_resp_set_hdr(req, "Set-Cookie", cookie);
+}
+
+void clear_session_cookie(httpd_req_t* req) {
+    httpd_resp_set_hdr(req, "Set-Cookie",
+                       "kaffee_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+}
+
 // --- Log ring ------------------------------------------------------------
 
 namespace {
@@ -392,6 +514,12 @@ int log_hook(const char* format, va_list args) {
         size_t length = std::strlen(line);
         while (length > 0 && (line[length - 1] == '\n' || line[length - 1] == '\r')) {
             line[--length] = '\0';
+        }
+        if (contains_secret_marker(line)) {
+            static constexpr char kRedacted[] = "[Zeile wegen Geheimnis gefiltert]";
+            std::strncpy(line, kRedacted, sizeof(line) - 1);
+            line[sizeof(line) - 1] = '\0';
+            length = std::strlen(line);
         }
         portENTER_CRITICAL(&g_log_lock);
         std::memcpy(g_log_ring.lines[g_log_ring.next], line, length + 1);
@@ -432,13 +560,24 @@ std::vector<std::string> log_ring_lines(size_t limit) {
     std::vector<std::string> out;
     if (limit == 0) return out;
     if (limit > kLogLines) limit = kLogLines;
+
+    // Allocate the snapshot before taking the spinlock: no dynamic allocation
+    // (and no long memcpy) while interrupts are disabled.
+    std::vector<char> snapshot(limit * kLogLineLength);
+    size_t available = 0;
     portENTER_CRITICAL(&g_log_lock);
-    const size_t available = g_log_ring.count < limit ? g_log_ring.count : limit;
+    available = g_log_ring.count < limit ? g_log_ring.count : limit;
     const size_t first = (g_log_ring.next + kLogLines - available) % kLogLines;
     for (size_t i = 0; i < available; ++i) {
-        out.emplace_back(g_log_ring.lines[(first + i) % kLogLines]);
+        std::memcpy(snapshot.data() + i * kLogLineLength, g_log_ring.lines[(first + i) % kLogLines],
+                    kLogLineLength);
     }
     portEXIT_CRITICAL(&g_log_lock);
+
+    out.reserve(available);
+    for (size_t i = 0; i < available; ++i) {
+        out.emplace_back(snapshot.data() + i * kLogLineLength);
+    }
     return out;
 }
 

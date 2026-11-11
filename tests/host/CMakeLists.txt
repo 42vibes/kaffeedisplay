@@ -21,10 +21,13 @@ set(API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/api)
 add_executable(kaffee_tests
   domain_test.cpp
   api_util_test.cpp
+  api_contract_test.cpp
   ${DOMAIN_DIR}/src/domain.cpp
   ${DOMAIN_DIR}/src/json.cpp
   ${DOMAIN_DIR}/src/sha256.cpp
   ${API_DIR}/src/api_util.cpp
+  ${API_DIR}/src/api_routes.cpp
+  ${API_DIR}/src/api_multipart.cpp
 )
 
 target_include_directories(kaffee_tests PRIVATE

@@ -7,6 +7,7 @@
 #include "api_internal.hpp"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "kaffee/api_multipart.hpp"
 #include "sha256_stream.hpp"
 
 // Multipart OTA upload.
@@ -77,28 +78,6 @@ class MultipartReader {
     size_t len_ = 0;
 };
 
-std::string parse_boundary(const std::string& content_type) {
-    const std::string lower = lower_ascii(content_type);
-    size_t pos = lower.find("boundary=");
-    if (pos == std::string::npos) return {};
-    pos += std::strlen("boundary=");
-    std::string value = content_type.substr(pos);
-    size_t semi = value.find(';');
-    if (semi != std::string::npos) value.resize(semi);
-    value = trim(value);
-    if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
-        value = value.substr(1, value.size() - 2);
-    }
-    if (value.empty() || value.size() > 128) return {};
-    return value;
-}
-
-bool header_names_field(const std::string& header) {
-    const std::string lower = lower_ascii(header);
-    return lower.find("name=\"firmware\"") != std::string::npos ||
-           lower.find("name=firmware") != std::string::npos;
-}
-
 }  // namespace
 
 esp_err_t handle_ota(RequestContext& ctx) {
@@ -106,7 +85,7 @@ esp_err_t handle_ota(RequestContext& ctx) {
     if (!content_type || lower_ascii(*content_type).rfind("multipart/form-data", 0) != 0) {
         return send_error(ctx.req, 415, "unsupported_media_type", "multipart/form-data erwartet");
     }
-    const std::string boundary = parse_boundary(*content_type);
+    const std::string boundary = parse_multipart_boundary(*content_type);
     if (boundary.empty()) {
         return send_error(ctx.req, 400, "invalid_input", "Multipart-Boundary fehlt");
     }
@@ -151,7 +130,7 @@ esp_err_t handle_ota(RequestContext& ctx) {
             return send_error(ctx.req, 400, "invalid_input", "Multipart-Kopf ist zu groß");
         }
         if (line.empty()) break;
-        if (header_names_field(line)) firmware_part = true;
+        if (multipart_is_firmware_part(line)) firmware_part = true;
     }
     if (!firmware_part) {
         return send_error(ctx.req, 400, "invalid_input", "Feld 'firmware' fehlt");
@@ -171,16 +150,14 @@ esp_err_t handle_ota(RequestContext& ctx) {
 
     Sha256Stream sha;
     size_t total = 0;
-    std::string carry;
-    const std::string delimiter = "\r\n" + first;
-    bool complete = false;
+    MultipartScanner scanner(boundary);
     bool failed = false;
     int failure_status = 500;
     std::string failure_code = "internal_error";
     std::string failure_message = "Firmware konnte nicht geschrieben werden";
 
     auto write_bytes = [&](const char* data, size_t size) {
-        if (size == 0) return;
+        if (size == 0 || failed) return;
         total += size;
         if (total > kMaxOtaBytes) {
             failed = true;
@@ -200,7 +177,7 @@ esp_err_t handle_ota(RequestContext& ctx) {
         }
     };
 
-    while (!complete && !failed) {
+    while (!scanner.complete() && !failed) {
         char chunk[kReadBuffer];
         int received = reader.read(chunk, sizeof(chunk));
         if (received <= 0) {
@@ -210,19 +187,24 @@ esp_err_t handle_ota(RequestContext& ctx) {
             failure_message = "Upload wurde abgebrochen";
             break;
         }
-        carry.append(chunk, static_cast<size_t>(received));
-        size_t index = carry.find(delimiter);
-        if (index != std::string::npos) {
-            write_bytes(carry.data(), index);
-            complete = true;
-            break;
-        }
-        const size_t keep = delimiter.size() - 1;
-        if (carry.size() > keep) {
-            size_t writable = carry.size() - keep;
-            write_bytes(carry.data(), writable);
-            carry.erase(0, writable);
-        }
+        std::string payload;
+        scanner.feed(std::string_view(chunk, static_cast<size_t>(received)), payload);
+        write_bytes(payload.data(), payload.size());
+    }
+
+    // A well-formed upload ends with `--boundary--`; reject a truncated close
+    // before switching the boot partition.
+    std::string closing(scanner.tail());
+    while (!failed && closing.size() < 2) {
+        char c = 0;
+        if (reader.read(&c, 1) <= 0) break;
+        closing.push_back(c);
+    }
+    if (!failed && (closing.size() < 2 || closing.compare(0, 2, "--") != 0)) {
+        failed = true;
+        failure_status = 400;
+        failure_code = "invalid_input";
+        failure_message = "Multipart-Abschluss fehlt";
     }
 
     if (failed) {

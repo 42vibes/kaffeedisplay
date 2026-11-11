@@ -1,25 +1,18 @@
 #include <cstdio>
-#include <cstring>
 #include <string>
 #include <string_view>
 
 #include "api_internal.hpp"
 #include "esp_log.h"
 
-// Embedded admin SPA.
-//
-// The asset table is produced by the tooling track (T-007): it embeds
-// `web/dist` and is expected to expose `kaffee/web_assets.hpp`. Until that
-// lands this component serves a small German fallback page so the firmware
-// never depends on a filesystem or a CDN. To enable the real assets, add the
-// include path in CMakeLists.txt and define KAFFEE_API_WEB_ASSETS; the adapter
-// below is the only place that has to change.
-
+#if __has_include("kaffee/web_assets.hpp")
+#include "kaffee/web_assets.hpp"
+#else
+// Safe fallback for builds without the generated `webassets` component
+// (T-007). The shape matches kaffee::api::Asset so the serving code below is
+// identical in both modes.
 namespace kaffee {
 namespace api {
-namespace {
-
-constexpr const char* kTag = "kaffee.api";
 
 struct Asset {
     std::string_view path;
@@ -28,6 +21,18 @@ struct Asset {
     std::string_view gzip_body;
     bool immutable;
 };
+
+const Asset* kaffee_web_asset_lookup(std::string_view) {
+    return nullptr;
+}
+
+}  // namespace api
+}  // namespace kaffee
+#endif
+
+namespace kaffee {
+namespace api {
+namespace {
 
 constexpr const char kFallbackIndex[] = R"HTML(<!doctype html>
 <html lang="de">
@@ -62,24 +67,14 @@ const Asset kFallbackAssets[] = {
     {"/index.html", "text/html; charset=utf-8", kFallbackIndex, {}, false},
 };
 
-#if defined(KAFFEE_API_WEB_ASSETS)
-// Provided by the generated web-asset translation unit (T-007). It returns
-// nullptr for unknown paths; the generated table must use the same Asset
-// layout (path, content type, body, optional gzip body, immutable flag).
-const Asset* kaffee_web_asset_lookup(std::string_view path);
-#endif
-
-// Adapter for the generated asset table. Keep the lookup behind one function so
-// swapping in `kaffee/web_assets.hpp` is a local change.
+// Generated table first; the fallback page keeps clean clones usable when the
+// generator has not run yet (empty table).
 const Asset* find_asset(std::string_view path) {
-#if defined(KAFFEE_API_WEB_ASSETS)
-    return kaffee_web_asset_lookup(path);
-#else
+    if (const Asset* asset = kaffee_web_asset_lookup(path)) return asset;
     for (const Asset& asset : kFallbackAssets) {
         if (asset.path == path) return &asset;
     }
     return nullptr;
-#endif
 }
 
 const char* content_type_for(std::string_view path) {
@@ -102,24 +97,10 @@ const char* content_type_for(std::string_view path) {
     return "application/octet-stream";
 }
 
-bool wants_index(std::string_view path) {
-    if (path.empty() || path == "/") return true;
-    size_t slash = path.find_last_of('/');
-    std::string_view name = slash == std::string_view::npos ? path : path.substr(slash + 1);
-    return name.find('.') == std::string_view::npos;
-}
-
-const char* cache_control_for(const Asset& asset, std::string_view request_path) {
-    if (asset.path == "/index.html" || wants_index(request_path)) return "no-cache";
-    if (asset.immutable || is_immutable_asset(request_path)) {
-        return "public, max-age=31536000, immutable";
-    }
-    return "public, max-age=3600";
-}
-
 esp_err_t send_not_found(httpd_req_t* req) {
     httpd_resp_set_status(req, status_text(404));
     httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     set_security_headers(req);
     return httpd_resp_sendstr(req, "Nicht gefunden");
 }
@@ -132,15 +113,16 @@ esp_err_t handle_static(httpd_req_t* req) {
     const std::string_view lookup =
         path == "/" ? std::string_view("/index.html") : std::string_view(path);
     const Asset* asset = find_asset(lookup);
-    if (asset == nullptr) {
-        if (wants_index(path)) {
-            // SPA fallback: client-side routes such as /users/abc.
-            asset = find_asset("/index.html");
-            path = "/index.html";
-        }
+    bool is_index = asset != nullptr && asset->path == "/index.html";
+    if (asset == nullptr && is_spa_fallback_path(path)) {
+        // Client-side route such as /users/abc.
+        asset = find_asset("/index.html");
+        path = "/index.html";
+        is_index = asset != nullptr;
     }
     if (asset == nullptr) return send_not_found(req);
 
+    const StaticPolicy policy = static_policy(path, is_index, "GET");
     const bool gzip = accepts_gzip(req_header(req, "Accept-Encoding").value_or(""));
     std::string_view body = asset->body;
     bool encoded = false;
@@ -151,8 +133,8 @@ esp_err_t handle_static(httpd_req_t* req) {
     const std::string etag = etag_for(asset->body);
 
     httpd_resp_set_hdr(req, "ETag", etag.c_str());
-    httpd_resp_set_hdr(req, "Cache-Control", cache_control_for(*asset, path));
-    if (asset->path == "/index.html") {
+    httpd_resp_set_hdr(req, "Cache-Control", policy.cache_control);
+    if (is_index) {
         // Defense in depth for the admin surface; no external origins.
         httpd_resp_set_hdr(req, "Content-Security-Policy",
                            "default-src 'self'; img-src 'self' data:; "
@@ -173,13 +155,8 @@ esp_err_t handle_static(httpd_req_t* req) {
     if (encoded) httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
     httpd_resp_set_hdr(req, "Vary", "Accept-Encoding");
     set_security_headers(req);
-
-    if (req->method == HTTP_HEAD) {
-        char length[24];
-        std::snprintf(length, sizeof(length), "%u", static_cast<unsigned>(body.size()));
-        httpd_resp_set_hdr(req, "Content-Length", length);
-        return httpd_resp_send(req, nullptr, 0);
-    }
+    // Only GET is routed here, so the body is always produced. HEAD is rejected
+    // in the dispatcher because esp_http_server manages Content-Length itself.
     return httpd_resp_send(req, body.data(), body.size());
 }
 

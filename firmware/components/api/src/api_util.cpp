@@ -288,6 +288,12 @@ int http_status_for_error(std::string_view code) {
         return 409;
     }
     if (key == "payload_too_large" || key == "body_too_large") return 413;
+    if (key == "method_not_allowed") return 405;
+    if (key == "unsupported_media_type") return 415;
+    if (key == "invalid_image" || key == "checksum_mismatch" || key == "missing_request_id" ||
+        key == "invalid_request_id" || key == "invalid_json" || key == "checksum_invalid") {
+        return 400;
+    }
     if (key == "rate_limited" || key == "too_many_requests" || key == "locked_out") return 429;
     if (key == "not_implemented") return 501;
     if (key == "unavailable" || key == "network_unavailable" || key == "storage_unavailable") {
@@ -302,6 +308,141 @@ int http_status_for_error(std::string_view code) {
 
 bool is_write_method(std::string_view method) {
     return method == "POST" || method == "PUT" || method == "PATCH" || method == "DELETE";
+}
+
+ErrorMapping map_service_error(const Error& error) {
+    const std::string code = lower_ascii(error.code);
+    const std::string text = lower_ascii(error.message);
+    auto says = [&text](std::string_view needle) { return text.find(needle) != std::string::npos; };
+
+    // API-generated errors already carry a German message (validation, CSRF,
+    // limits). Keep it; service codes are mapped below.
+    static constexpr std::string_view kApiCodes[] = {
+        "invalid_input",
+        "missing_request_id",
+        "invalid_request_id",
+        "csrf_failed",
+        "payload_too_large",
+        "not_implemented",
+        "method_not_allowed",
+        "unsupported_media_type",
+        "invalid_image",
+        "checksum_mismatch",
+        "password_change_required",
+        "unauthorized",
+        "forbidden",
+        "not_found",
+        "conflict",
+    };
+    for (std::string_view api_code : kApiCodes) {
+        if (code == api_code) {
+            ErrorMapping mapping;
+            mapping.status = http_status_for_error(code);
+            mapping.code = code;
+            mapping.message = error.message.empty() ? "Eingabe ist ungültig" : error.message;
+            return mapping;
+        }
+    }
+
+    // Real KaffeeService/ledger codes. The service message is only inspected to
+    // disambiguate overloaded codes; it is never forwarded to the client.
+    if (code == "auth") return {401, "auth", "Anmeldung fehlgeschlagen"};
+    if (code == "rate_limit" || code == "rate_limited") {
+        return {429, "rate_limit", "Zu viele Versuche, bitte später erneut versuchen"};
+    }
+    if (code == "session") return {401, "session", "Sitzung abgelaufen"};
+    if (code == "password") {
+        return {400, "password", "Passwort erfüllt die Anforderungen nicht"};
+    }
+    if (code == "backup") return {400, "backup", "Sicherung ist ungültig"};
+    if (code == "settings") return {400, "settings", "Einstellungen sind ungültig"};
+    if (code == "debt") return {409, "debt", "Kreditlimit überschritten"};
+    if (code == "duplicate") return {409, "duplicate", "Vorgang wurde bereits gebucht"};
+    if (code == "amount" || code == "price") {
+        return {400, code, "Betrag ist ungültig"};
+    }
+    if (code == "time") return {400, "time", "Zeitangabe ist ungültig"};
+    if (code == "ap") return {400, "ap", "Zugangspunkt-Anfrage ist ungültig"};
+    if (code == "void") {
+        if (says("not found") || says("unknown")) {
+            return {404, "void", "Buchung nicht gefunden"};
+        }
+        return {409, "void", "Buchung kann nicht storniert werden"};
+    }
+    if (code == "event") return {404, "event", "Buchung nicht gefunden"};
+    if (code == "expense") {
+        if (says("unknown") || says("not found")) {
+            return {404, "expense", "Ausgabe nicht gefunden"};
+        }
+        if (says("already") || says("voided")) {
+            return {409, "expense", "Ausgabe kann nicht geändert werden"};
+        }
+        return {400, "expense", "Ausgabe ist ungültig"};
+    }
+    if (code == "user") {
+        if (says("unknown") || says("not found")) {
+            return {404, "user", "Benutzer nicht gefunden"};
+        }
+        if (says("already") || says("exists")) {
+            return {409, "user", "Benutzer existiert bereits"};
+        }
+        if (says("archived")) return {409, "user", "Benutzer ist archiviert"};
+        return {400, "user", "Benutzerangaben sind ungültig"};
+    }
+    if (code == "product") {
+        if (says("unknown") || says("not found")) {
+            return {404, "product", "Produkt nicht gefunden"};
+        }
+        if (says("already") || says("exists")) {
+            return {409, "product", "Produkt existiert bereits"};
+        }
+        if (says("archived")) return {409, "product", "Produkt ist archiviert"};
+        return {400, "product", "Produktangaben sind ungültig"};
+    }
+    if (code == "name" || code == "type" || code == "seq" || code == "id") {
+        return {400, code, "Eingabe ist ungültig"};
+    }
+    if (code == "chain" || code == "hash") {
+        return {500, "internal_error", "Interner Datenfehler"};
+    }
+
+    const int status = http_status_for_error(code);
+    ErrorMapping mapping;
+    mapping.status = status;
+    mapping.code = status == 500 || code.empty() ? "internal_error" : code;
+    switch (status) {
+        case 400:
+            mapping.message = "Eingabe ist ungültig";
+            break;
+        case 401:
+            mapping.message = "Anmeldung erforderlich";
+            break;
+        case 403:
+            mapping.message = "Zugriff verweigert";
+            break;
+        case 404:
+            mapping.message = "Ressource nicht gefunden";
+            break;
+        case 409:
+            mapping.message = "Konflikt";
+            break;
+        case 413:
+            mapping.message = "Anfrage ist zu groß";
+            break;
+        case 429:
+            mapping.message = "Zu viele Anfragen, bitte später erneut versuchen";
+            break;
+        case 501:
+            mapping.message = "Nicht verfügbar";
+            break;
+        case 503:
+            mapping.message = "Vorübergehend nicht verfügbar";
+            break;
+        default:
+            mapping.message = "Interner Fehler";
+            break;
+    }
+    return mapping;
 }
 
 // --- Request ids ---------------------------------------------------------
@@ -359,6 +500,43 @@ bool is_immutable_asset(std::string_view path) {
         if (std::isalnum(static_cast<unsigned char>(c)) == 0) return false;
     }
     return true;
+}
+
+bool is_spa_fallback_path(std::string_view path) {
+    if (path.empty() || path == "/") return true;
+    size_t slash = path.find_last_of('/');
+    std::string_view name = slash == std::string_view::npos ? path : path.substr(slash + 1);
+    return name.find('.') == std::string_view::npos;
+}
+
+bool static_method_allowed(std::string_view method) {
+    return method == "GET";
+}
+
+StaticPolicy static_policy(std::string_view request_path, bool is_index_asset,
+                           std::string_view method) {
+    StaticPolicy policy;
+    policy.send_body = method == "GET";
+    if (is_index_asset || is_spa_fallback_path(request_path)) {
+        policy.cache_control = "no-cache";
+        policy.immutable = false;
+        return policy;
+    }
+    if (is_immutable_asset(request_path)) {
+        policy.cache_control = "public, max-age=31536000, immutable";
+        policy.immutable = true;
+        return policy;
+    }
+    policy.cache_control = "public, max-age=3600";
+    return policy;
+}
+
+CaptiveProbe captive_probe_kind(std::string_view path) {
+    if (path == "/generate_204") return CaptiveProbe::Generate204;
+    if (path == "/hotspot-detect.html" || path == "/connecttest.txt" || path == "/ncsi.txt") {
+        return CaptiveProbe::Redirect;
+    }
+    return CaptiveProbe::None;
 }
 
 std::string content_disposition(std::string_view filename) {
@@ -595,6 +773,30 @@ bool is_valid_color(std::string_view color) {
         if (std::isxdigit(static_cast<unsigned char>(color[i])) == 0) return false;
     }
     return true;
+}
+
+bool contains_secret_marker(std::string_view line) {
+    // Allocation-free: this runs inside the log hook.
+    static constexpr std::string_view kMarkers[] = {
+        "password",      "passwort", "secret", "token",       "csrf",
+        "authorization", "cookie",   "psk=",   "ap_password", "sta_password",
+    };
+    for (std::string_view marker : kMarkers) {
+        if (marker.size() > line.size()) continue;
+        for (size_t pos = 0; pos + marker.size() <= line.size(); ++pos) {
+            bool match = true;
+            for (size_t i = 0; i < marker.size(); ++i) {
+                const char c =
+                    static_cast<char>(std::tolower(static_cast<unsigned char>(line[pos + i])));
+                if (c != marker[i]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace api

@@ -16,7 +16,6 @@ namespace {
 using nlohmann::json;
 
 constexpr const char* kTag = "kaffee.api";
-constexpr const char* kSessionCookie = "kaffee_session";
 constexpr size_t kMaxNameLength = 40;
 constexpr size_t kMaxNoteLength = 300;
 constexpr Timestamp kMinTrustedTime = 1577836800;  // 2020-01-01T00:00:00Z
@@ -89,6 +88,63 @@ bool validate_display(const DisplaySettings& display, Error& error) {
     if (display.dim_timeout_s < 0 || display.dim_timeout_s > 86400 ||
         display.screen_off_timeout_s < 0 || display.screen_off_timeout_s > 86400) {
         error = Error{"invalid_input", "Zeitüberschreitungen müssen zwischen 0 und 86400 liegen"};
+        return false;
+    }
+    return true;
+}
+
+bool validate_settings(const Settings& settings, const Settings& base, Error& error) {
+    const NetworkSettings& network = settings.network;
+    if (!network.ap_ssid.empty() && network.ap_ssid.size() > 32) {
+        error = Error{"invalid_input", "AP-Name darf höchstens 32 Zeichen haben"};
+        return false;
+    }
+    // Only validate secrets that the request actually changed; an existing
+    // stored secret must not block unrelated edits.
+    if (network.ap_password != base.network.ap_password && !network.ap_password.empty() &&
+        (network.ap_password.size() < 8 || network.ap_password.size() > 63)) {
+        error = Error{"invalid_input", "AP-Passwort muss 8 bis 63 Zeichen haben"};
+        return false;
+    }
+    if (network.sta_enabled && network.sta_ssid.empty()) {
+        error = Error{"invalid_input", "STA-Netzwerkname fehlt"};
+        return false;
+    }
+    if (network.sta_ssid.size() > 32) {
+        error = Error{"invalid_input", "STA-Netzwerkname darf höchstens 32 Zeichen haben"};
+        return false;
+    }
+    if (network.sta_password != base.network.sta_password && !network.sta_password.empty() &&
+        (network.sta_password.size() < 8 || network.sta_password.size() > 63)) {
+        error = Error{"invalid_input", "STA-Passwort muss 8 bis 63 Zeichen haben"};
+        return false;
+    }
+    if (network.ap_window_s < 60 || network.ap_window_s > 3600) {
+        error = Error{"invalid_input", "AP-Fenster muss zwischen 60 und 3600 Sekunden liegen"};
+        return false;
+    }
+    if (network.hostname.empty() || network.hostname.size() > 32) {
+        error = Error{"invalid_input", "Hostname ist ungültig"};
+        return false;
+    }
+    if (settings.time.timezone.empty() || settings.time.timezone.size() > 64) {
+        error = Error{"invalid_input", "Zeitzone ist ungültig"};
+        return false;
+    }
+    if (settings.time.sntp_server.size() > 128) {
+        error = Error{"invalid_input", "SNTP-Server ist zu lang"};
+        return false;
+    }
+    if (settings.app.currency.size() != 3) {
+        error = Error{"invalid_input", "Währung muss ein dreistelliger Code sein"};
+        return false;
+    }
+    if (settings.app.locale.empty() || settings.app.locale.size() > 16) {
+        error = Error{"invalid_input", "Sprache ist ungültig"};
+        return false;
+    }
+    if (settings.app.max_open_debt_cents < 0) {
+        error = Error{"invalid_input", "Maximale Schulden dürfen nicht negativ sein"};
         return false;
     }
     return true;
@@ -222,18 +278,6 @@ json cash_count_from_event(const Event& event) {
                 {"note", event.note}};
 }
 
-std::string request_id_or_generated(RequestContext& ctx, const char* prefix) {
-    if (!ctx.request_id.empty()) return ctx.request_id;
-    if (auto header = req_header(ctx.req, "X-Request-Id")) {
-        std::string candidate = trim(*header);
-        if (is_valid_request_id(candidate)) return candidate;
-    }
-    char buffer[48];
-    std::snprintf(buffer, sizeof(buffer), "%s-%016llx", prefix,
-                  static_cast<unsigned long long>(ctx.server.platform().random_u64()));
-    return buffer;
-}
-
 // --- Auth ----------------------------------------------------------------
 
 esp_err_t handle_health(RequestContext& ctx) {
@@ -250,7 +294,7 @@ json session_json(KaffeeService& service, const Session& session) {
 }
 
 esp_err_t handle_login(RequestContext& ctx) {
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
 
     Result<std::string> username = get_string(*body.value, "username", true, 64);
@@ -266,26 +310,23 @@ esp_err_t handle_login(RequestContext& ctx) {
     }
 
     const Timestamp now = ctx.server.platform().time_info().now;
-    int64_t max_age = session.value->expires_at - now;
-    if (max_age < 60) max_age = 60;
-    if (max_age > 8 * 3600) max_age = 8 * 3600;
-    char cookie[160];
-    std::snprintf(cookie, sizeof(cookie), "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%lld",
-                  kSessionCookie, session.value->token.c_str(), static_cast<long long>(max_age));
-    httpd_resp_set_hdr(ctx.req, "Set-Cookie", cookie);
-
+    set_session_cookie(ctx.req, session.value->token, session.value->expires_at, now);
     return send_json(ctx.req, 200, session_json(ctx.server.service(), *session.value));
 }
 
 esp_err_t handle_logout(RequestContext& ctx) {
     Result<Unit> result = ctx.server.service().logout(ctx.token);
     if (!result) return send_service_error(ctx.req, result_error(result));
-    httpd_resp_set_hdr(ctx.req, "Set-Cookie",
-                       "kaffee_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+    clear_session_cookie(ctx.req);
     return send_no_content(ctx.req);
 }
 
 esp_err_t handle_me(RequestContext& ctx) {
+    // validate_session() already slid the idle window; re-issue the cookie so
+    // the browser Max-Age follows the refreshed absolute expiry.
+    const Timestamp now = ctx.server.platform().time_info().now;
+    const std::string& token = ctx.session.token.empty() ? ctx.token : ctx.session.token;
+    set_session_cookie(ctx.req, token, ctx.session.expires_at, now);
     return send_json(ctx.req, 200, session_json(ctx.server.service(), ctx.session));
 }
 
@@ -317,7 +358,7 @@ esp_err_t handle_users_list(RequestContext& ctx) {
 }
 
 esp_err_t handle_users_create(RequestContext& ctx) {
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<std::string> name = get_string(*body.value, "name", true, kMaxNameLength);
     if (!name) return send_service_error(ctx.req, result_error(name));
@@ -346,7 +387,7 @@ esp_err_t handle_users_update(RequestContext& ctx) {
     auto existing = service.find_user(id);
     if (!existing) return send_error(ctx.req, 404, "not_found", "Benutzer nicht gefunden");
 
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<std::string> name = get_string(*body.value, "name", false, kMaxNameLength);
     if (!name) return send_service_error(ctx.req, result_error(name));
@@ -391,7 +432,7 @@ esp_err_t handle_users_topup(RequestContext& ctx) {
     if (!service.find_user(id)) {
         return send_error(ctx.req, 404, "not_found", "Benutzer nicht gefunden");
     }
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<Cents> amount = get_cents(*body.value, "amount_cents", true, 1, 1000000);
     if (!amount) return send_service_error(ctx.req, result_error(amount));
@@ -409,7 +450,7 @@ esp_err_t handle_users_adjust(RequestContext& ctx) {
     if (!service.find_user(id)) {
         return send_error(ctx.req, 404, "not_found", "Benutzer nicht gefunden");
     }
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<Cents> amount = get_cents(*body.value, "amount_cents", true, -1000000, 1000000);
     if (!amount) return send_service_error(ctx.req, result_error(amount));
@@ -524,7 +565,7 @@ Result<ProductInput> parse_product_input(const json& body, const Product* base) 
 }
 
 esp_err_t handle_products_create(RequestContext& ctx) {
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<ProductInput> input = parse_product_input(*body.value, nullptr);
     if (!input) return send_service_error(ctx.req, result_error(input));
@@ -544,7 +585,7 @@ esp_err_t handle_products_update(RequestContext& ctx) {
     auto existing = service.find_product(id);
     if (!existing) return send_error(ctx.req, 404, "not_found", "Produkt nicht gefunden");
 
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<ProductInput> input = parse_product_input(*body.value, &*existing);
     if (!input) return send_service_error(ctx.req, result_error(input));
@@ -614,7 +655,7 @@ esp_err_t handle_transactions_list(RequestContext& ctx) {
 esp_err_t handle_transactions_void(RequestContext& ctx) {
     KaffeeService& service = ctx.server.service();
     const std::string id = ctx.params.get("id").value_or("");
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<std::string> reason = get_string(*body.value, "reason", true, 200);
     if (!reason) return send_service_error(ctx.req, result_error(reason));
@@ -700,7 +741,7 @@ esp_err_t handle_expenses_list(RequestContext& ctx) {
 }
 
 esp_err_t handle_expenses_create(RequestContext& ctx) {
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<ExpenseInput> input = parse_expense_input(*body.value, nullptr);
     if (!input) return send_service_error(ctx.req, result_error(input));
@@ -718,7 +759,7 @@ esp_err_t handle_expenses_update(RequestContext& ctx) {
     const Expense* existing = find_expense(service, id);
     if (existing == nullptr) return send_error(ctx.req, 404, "not_found", "Ausgabe nicht gefunden");
 
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<ExpenseInput> input = parse_expense_input(*body.value, existing);
     if (!input) return send_service_error(ctx.req, result_error(input));
@@ -739,7 +780,7 @@ esp_err_t handle_expenses_void(RequestContext& ctx) {
     if (find_expense(service, id) == nullptr) {
         return send_error(ctx.req, 404, "not_found", "Ausgabe nicht gefunden");
     }
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<std::string> reason = get_string(*body.value, "reason", true, 200);
     if (!reason) return send_service_error(ctx.req, result_error(reason));
@@ -763,7 +804,7 @@ esp_err_t handle_cash_counts_list(RequestContext& ctx) {
 }
 
 esp_err_t handle_cash_counts_create(RequestContext& ctx) {
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<Cents> counted = get_cents(*body.value, "counted_cents", true, 0, 100000000);
     if (!counted) return send_service_error(ctx.req, result_error(counted));
@@ -829,11 +870,19 @@ esp_err_t handle_settings_get(RequestContext& ctx) {
 
 esp_err_t handle_settings_put(RequestContext& ctx) {
     KaffeeService& service = ctx.server.service();
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
 
+    // PUT applies the provided subtrees and keeps omitted values. This matches
+    // the all-optional Settings schema; write-only secrets are never cleared by
+    // an empty string.
     Settings base = service.settings();
-    Settings next = settings_from_json(*body.value, base);
+    Settings next;
+    try {
+        next = settings_from_json(*body.value, base);
+    } catch (const nlohmann::json::exception&) {
+        return send_error(ctx.req, 400, "invalid_input", "Einstellungen sind ungültig");
+    }
 
     // Empty write-only secrets keep the stored value (contract).
     if (body.value->contains("network")) {
@@ -850,20 +899,7 @@ esp_err_t handle_settings_put(RequestContext& ctx) {
 
     Error error;
     if (!validate_display(next.display, error)) return send_service_error(ctx.req, error);
-    if (next.network.ap_window_s < 60 || next.network.ap_window_s > 3600) {
-        return send_error(ctx.req, 400, "invalid_input",
-                          "AP-Fenster muss zwischen 60 und 3600 Sekunden liegen");
-    }
-    if (next.network.hostname.empty() || next.network.hostname.size() > 32) {
-        return send_error(ctx.req, 400, "invalid_input", "Hostname ist ungültig");
-    }
-    if (next.time.timezone.empty()) {
-        return send_error(ctx.req, 400, "invalid_input", "Zeitzone darf nicht leer sein");
-    }
-    if (next.app.currency.empty() || next.app.locale.empty()) {
-        return send_error(ctx.req, 400, "invalid_input",
-                          "Währung und Sprache dürfen nicht leer sein");
-    }
+    if (!validate_settings(next, base, error)) return send_service_error(ctx.req, error);
 
     Result<Unit> saved = service.save_settings(next, ctx.request_id);
     if (!saved) return send_service_error(ctx.req, result_error(saved));
@@ -877,7 +913,7 @@ esp_err_t handle_display_get(RequestContext& ctx) {
 
 esp_err_t handle_display_put(RequestContext& ctx) {
     KaffeeService& service = ctx.server.service();
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
 
     DisplaySettings next = service.display_settings();
@@ -916,7 +952,7 @@ esp_err_t handle_display_put(RequestContext& ctx) {
 }
 
 esp_err_t handle_password_change(RequestContext& ctx) {
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<std::string> current = get_string(*body.value, "current_password", true, 256);
     if (!current) return send_service_error(ctx.req, result_error(current));
@@ -926,9 +962,14 @@ esp_err_t handle_password_change(RequestContext& ctx) {
         return send_error(ctx.req, 400, "invalid_input",
                           "Neues Passwort muss mindestens 10 Zeichen haben");
     }
-    Result<Unit> changed = ctx.server.service().change_admin_password(
-        *current.value, *next.value, request_id_or_generated(ctx, "pw"));
+    Result<Unit> changed =
+        ctx.server.service().change_admin_password(*current.value, *next.value, ctx.request_id);
     if (!changed) return send_service_error(ctx.req, result_error(changed));
+    // The service owns the session map; dropping our token here at least
+    // revokes the session that performed the change. TODO(T-001): have
+    // change_admin_password() clear all sessions when the service lands.
+    (void)ctx.server.service().logout(ctx.token);
+    clear_session_cookie(ctx.req);
     return send_no_content(ctx.req);
 }
 
@@ -939,7 +980,7 @@ esp_err_t handle_time_get(RequestContext& ctx) {
 }
 
 esp_err_t handle_time_sync(RequestContext& ctx) {
-    Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+    Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
     Result<Cents> epoch_ms =
         get_cents(*body.value, "epoch_ms", true, std::numeric_limits<int64_t>::min(),
@@ -977,11 +1018,8 @@ esp_err_t handle_ap_stop(RequestContext& ctx) {
 esp_err_t handle_ap_extend(RequestContext& ctx) {
     Cents seconds = 600;
     if (ctx.req->content_len > 0) {
-        Result<json> body = read_json_body(ctx.req, kMaxJsonBody);
+        Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
         if (!body) return send_service_error(ctx.req, result_error(body));
-        if (!body.value->is_object()) {
-            return send_error(ctx.req, 400, "invalid_input", "JSON-Objekt erwartet");
-        }
         if (body.value->contains("seconds")) {
             Result<Cents> parsed = get_cents(*body.value, "seconds", false, 60, 3600);
             if (!parsed) return send_service_error(ctx.req, result_error(parsed));
@@ -1031,82 +1069,72 @@ esp_err_t handle_restore(RequestContext& ctx) {
     if (body.value->empty()) {
         return send_error(ctx.req, 400, "invalid_input", "Sicherung fehlt");
     }
-    Result<Unit> restored =
-        ctx.server.service().import_backup(*body.value, request_id_or_generated(ctx, "restore"));
+    Result<Unit> restored = ctx.server.service().import_backup(*body.value, ctx.request_id);
     if (!restored) return send_service_error(ctx.req, result_error(restored));
     return send_no_content(ctx.req);
 }
 
 }  // namespace
 
-// Route table. Order matters only for readability; paths are exact per segment.
-const std::vector<Route>& routes() {
-    static const std::vector<Route> kRoutes = {
-        {HTTP_GET, "/api/v1/health", AuthPolicy::None, &handle_health, false},
-        {HTTP_POST, "/api/v1/auth/login", AuthPolicy::None, &handle_login, false},
-        {HTTP_POST, "/api/v1/auth/logout", AuthPolicy::SessionCsrf, &handle_logout, false},
-        {HTTP_GET, "/api/v1/auth/me", AuthPolicy::Session, &handle_me, false},
+// Handler bindings. MUST stay in the same order as `route_specs()` in
+// api_routes.cpp; dispatch validates the lengths at runtime.
+const std::vector<RouteHandler>& route_handlers() {
+    static const std::vector<RouteHandler> kHandlers = {
+        &handle_health,
+        &handle_login,
+        &handle_logout,
+        &handle_me,
 
-        {HTTP_GET, "/api/v1/users", AuthPolicy::Session, &handle_users_list, false},
-        {HTTP_POST, "/api/v1/users", AuthPolicy::SessionCsrf, &handle_users_create, true},
-        {HTTP_PATCH, "/api/v1/users/{id}", AuthPolicy::SessionCsrf, &handle_users_update, true},
-        {HTTP_POST, "/api/v1/users/{id}/archive", AuthPolicy::SessionCsrf, &handle_users_archive,
-         true},
-        {HTTP_POST, "/api/v1/users/{id}/topup", AuthPolicy::SessionCsrf, &handle_users_topup, true},
-        {HTTP_POST, "/api/v1/users/{id}/adjust", AuthPolicy::SessionCsrf, &handle_users_adjust,
-         true},
-        {HTTP_GET, "/api/v1/users/{id}/transactions", AuthPolicy::Session,
-         &handle_users_transactions, false},
+        &handle_users_list,
+        &handle_users_create,
+        &handle_users_update,
+        &handle_users_archive,
+        &handle_users_topup,
+        &handle_users_adjust,
+        &handle_users_transactions,
 
-        {HTTP_GET, "/api/v1/products", AuthPolicy::Session, &handle_products_list, false},
-        {HTTP_POST, "/api/v1/products", AuthPolicy::SessionCsrf, &handle_products_create, true},
-        {HTTP_PATCH, "/api/v1/products/{id}", AuthPolicy::SessionCsrf, &handle_products_update,
-         true},
-        {HTTP_DELETE, "/api/v1/products/{id}", AuthPolicy::SessionCsrf, &handle_products_delete,
-         true},
+        &handle_products_list,
+        &handle_products_create,
+        &handle_products_update,
+        &handle_products_delete,
 
-        {HTTP_GET, "/api/v1/transactions", AuthPolicy::Session, &handle_transactions_list, false},
-        {HTTP_POST, "/api/v1/transactions/{id}/void", AuthPolicy::SessionCsrf,
-         &handle_transactions_void, true},
+        &handle_transactions_list,
+        &handle_transactions_void,
 
-        {HTTP_GET, "/api/v1/expenses", AuthPolicy::Session, &handle_expenses_list, false},
-        {HTTP_POST, "/api/v1/expenses", AuthPolicy::SessionCsrf, &handle_expenses_create, true},
-        {HTTP_PATCH, "/api/v1/expenses/{id}", AuthPolicy::SessionCsrf, &handle_expenses_update,
-         true},
-        {HTTP_POST, "/api/v1/expenses/{id}/void", AuthPolicy::SessionCsrf, &handle_expenses_void,
-         true},
+        &handle_expenses_list,
+        &handle_expenses_create,
+        &handle_expenses_update,
+        &handle_expenses_void,
 
-        {HTTP_GET, "/api/v1/cash-counts", AuthPolicy::Session, &handle_cash_counts_list, false},
-        {HTTP_POST, "/api/v1/cash-counts", AuthPolicy::SessionCsrf, &handle_cash_counts_create,
-         true},
+        &handle_cash_counts_list,
+        &handle_cash_counts_create,
 
-        {HTTP_GET, "/api/v1/stats/summary", AuthPolicy::Session, &handle_summary, false},
-        {HTTP_GET, "/api/v1/stats/leaderboard", AuthPolicy::Session, &handle_leaderboard, false},
-        {HTTP_GET, "/api/v1/reports/{kind}", AuthPolicy::Session, &handle_reports, false},
+        &handle_summary,
+        &handle_leaderboard,
+        &handle_reports,
 
-        {HTTP_GET, "/api/v1/settings", AuthPolicy::Session, &handle_settings_get, false},
-        {HTTP_PUT, "/api/v1/settings", AuthPolicy::SessionCsrf, &handle_settings_put, true},
-        {HTTP_GET, "/api/v1/settings/display", AuthPolicy::Session, &handle_display_get, false},
-        {HTTP_PUT, "/api/v1/settings/display", AuthPolicy::SessionCsrf, &handle_display_put, true},
-        {HTTP_POST, "/api/v1/settings/password", AuthPolicy::SessionCsrf, &handle_password_change,
-         false},
+        &handle_settings_get,
+        &handle_settings_put,
+        &handle_display_get,
+        &handle_display_put,
+        &handle_password_change,
 
-        {HTTP_GET, "/api/v1/time", AuthPolicy::Session, &handle_time_get, false},
-        {HTTP_POST, "/api/v1/time/sync", AuthPolicy::SessionCsrf, &handle_time_sync, false},
+        &handle_time_get,
+        &handle_time_sync,
 
-        {HTTP_GET, "/api/v1/ap", AuthPolicy::Session, &handle_ap_status, false},
-        {HTTP_POST, "/api/v1/ap/start", AuthPolicy::SessionCsrf, &handle_ap_start, true},
-        {HTTP_POST, "/api/v1/ap/stop", AuthPolicy::SessionCsrf, &handle_ap_stop, false},
-        {HTTP_POST, "/api/v1/ap/extend", AuthPolicy::SessionCsrf, &handle_ap_extend, false},
+        &handle_ap_status,
+        &handle_ap_start,
+        &handle_ap_stop,
+        &handle_ap_extend,
 
-        {HTTP_GET, "/api/v1/device", AuthPolicy::Session, &handle_device, false},
-        {HTTP_POST, "/api/v1/display/test", AuthPolicy::SessionCsrf, &handle_display_test, false},
-        {HTTP_GET, "/api/v1/logs", AuthPolicy::Session, &handle_logs, false},
-        {HTTP_GET, "/api/v1/backup", AuthPolicy::Session, &handle_backup, false},
-        {HTTP_POST, "/api/v1/restore", AuthPolicy::SessionCsrf, &handle_restore, false},
-        {HTTP_POST, "/api/v1/ota", AuthPolicy::SessionCsrf, &handle_ota, false},
+        &handle_device,
+        &handle_display_test,
+        &handle_logs,
+        &handle_backup,
+        &handle_restore,
+        &handle_ota,
     };
-    return kRoutes;
+    return kHandlers;
 }
 
 }  // namespace api

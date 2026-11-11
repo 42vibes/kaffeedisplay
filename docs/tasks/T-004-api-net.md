@@ -1,9 +1,25 @@
 # T-004 — HTTP API, auth, AP/time, backup/OTA
 
-Status: blocked on T-001 (service implementation)
+Status: in progress — API half implemented on `feat/T-008-api` (PR #4), net on
+`feat/T-005-api-net`
 Track: backend
 Owner: –
-Branch: `feat/T-004-api-net`
+Branch: `feat/T-008-api` (API), `feat/T-005-api-net` (net)
+
+## Split
+
+T-004 is implemented in two branches to keep the scopes reviewable:
+
+- **T-008 / `feat/T-008-api`** — `firmware/components/api`: all REST routes,
+  auth/CSRF/request-id middleware, static SPA (generated `webassets` + fallback),
+  CSV/backup streaming hooks, OTA, host contract tests. See
+  `docs/api/implementation-notes.md` for the error mapping (German messages,
+  stable codes), generated-id removal and remaining integration TODOs.
+- **T-005 / `feat/T-005-api-net`** — `firmware/components/net`: AP/STA lifecycle,
+  captive DNS, mDNS, SNTP, browser time service, probe endpoints.
+
+The API server lifecycle is owned by `main`/`net`; the API defers teardown when
+`stop()` is called from the httpd task (`/ap/stop`).
 
 ## Context
 

@@ -60,6 +60,16 @@ std::string json_error_body(std::string_view code, std::string_view message);
 // details never leak as a false success.
 int http_status_for_error(std::string_view code);
 
+// Maps a service/ledger error to a status plus a stable code and a German
+// message. Service messages are English implementation details and never reach
+// the admin UI; the SPA may translate the stable code instead.
+struct ErrorMapping {
+    int status = 500;
+    std::string code = "internal_error";
+    std::string message = "Interner Fehler";
+};
+ErrorMapping map_service_error(const Error& error);
+
 bool is_write_method(std::string_view method);
 
 // --- Request ids ---------------------------------------------------------
@@ -72,6 +82,22 @@ bool is_valid_request_id(std::string_view id);
 bool accepts_gzip(std::string_view accept_encoding);
 // Fingerprinted build artefacts (Vite emits `index-<hash>.js`) are immutable.
 bool is_immutable_asset(std::string_view path);
+// Paths served by the SPA fallback: "/" and extension-less client routes.
+bool is_spa_fallback_path(std::string_view path);
+// Only GET is served for static files; HEAD is rejected to keep response
+// headers (Content-Length) unambiguous with esp_http_server.
+bool static_method_allowed(std::string_view method);
+struct StaticPolicy {
+    const char* cache_control = "public, max-age=3600";
+    bool immutable = false;
+    bool send_body = true;
+};
+StaticPolicy static_policy(std::string_view request_path, bool is_index_asset,
+                           std::string_view method);
+// Captive-portal probe paths. `generate_204` answers 204, the others redirect
+// to the admin UI while the AP is active.
+enum class CaptiveProbe { None, Generate204, Redirect };
+CaptiveProbe captive_probe_kind(std::string_view path);
 std::string content_disposition(std::string_view filename);
 std::string etag_for(std::string_view body);
 bool etag_matches(std::string_view if_none_match, std::string_view etag);
@@ -117,6 +143,9 @@ std::string lower_ascii(std::string_view value);
 std::string hex_lower(const uint8_t* data, size_t size);
 bool is_valid_color(std::string_view color);
 bool parse_bool_text(std::string_view value, bool& out);
+// Redacts log lines that may contain credentials/tokens before they are kept
+// in the in-RAM ring served by GET /logs.
+bool contains_secret_marker(std::string_view line);
 
 }  // namespace api
 }  // namespace kaffee
