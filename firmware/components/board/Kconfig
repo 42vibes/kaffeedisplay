@@ -1,0 +1,12 @@
+menu "Board"
+
+config BOARD_DISPLAY_SELFTEST
+    bool "Run the RGB scanout colour self-test before LVGL"
+    default n
+    help
+        Fill the ST7701S framebuffer directly with red, green, blue, white and
+        eight vertical colour bars before LVGL starts. Intended for bring-up
+        diagnostics only; the normal boot continues after the test when
+        disabled.
+
+endmenu

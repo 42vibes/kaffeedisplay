@@ -9,6 +9,7 @@
 #include "board_pins.hpp"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "esp_cache.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_io_additions.h"
@@ -316,7 +317,7 @@ Result<Unit> EspDisplay::init_panel() {
     vendor.rgb_config = &rgb_config;
     vendor.init_cmds = init_cmds;
     vendor.init_cmds_size = static_cast<uint16_t>(init_count);
-    vendor.flags.mirror_by_cmd = 1;
+    vendor.flags.mirror_by_cmd = 0;
     vendor.flags.enable_io_multiplex = 0;
 
     esp_lcd_panel_dev_config_t panel_config = {};
@@ -357,6 +358,56 @@ Result<Unit> EspDisplay::init_panel() {
 
     ESP_LOGI(kTag, "ST7701S RGB panel initialized (%dx%d, type-9, single frame buffer)", kWidth,
              kHeight);
+    return Result<Unit>::ok(Unit{});
+}
+
+Result<Unit> EspDisplay::run_scanout_selftest() {
+    if (panel_ == nullptr) {
+        return Result<Unit>::fail("board/not_initialized", "panel must be initialized first");
+    }
+    void* framebuffer = nullptr;
+    const esp_err_t fb_err = esp_lcd_rgb_panel_get_frame_buffer(panel_, 1, &framebuffer);
+    if (fb_err != ESP_OK || framebuffer == nullptr) {
+        ESP_LOGE(kTag, "scanout self-test: no framebuffer: %s", esp_err_to_name(fb_err));
+        return Result<Unit>::fail("board/no_framebuffer", "RGB framebuffer is unavailable");
+    }
+
+    auto* pixels = static_cast<uint16_t*>(framebuffer);
+    const size_t pixel_count = static_cast<size_t>(kWidth) * kHeight;
+    const size_t byte_count = pixel_count * sizeof(uint16_t);
+
+    auto publish = [&](const char* label) {
+        const esp_err_t sync =
+            esp_cache_msync(framebuffer, byte_count, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+        ESP_LOGI(kTag, "scanout self-test: %s, cache_msync=%s", label, esp_err_to_name(sync));
+    };
+
+    auto solid = [&](uint16_t color, const char* name) {
+        for (size_t i = 0; i < pixel_count; ++i) {
+            pixels[i] = color;
+        }
+        publish(name);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    };
+
+    ESP_LOGI(kTag, "scanout self-test: framebuffer %p, %zu bytes", framebuffer, byte_count);
+    solid(0xF800, "red (0xF800)");
+    solid(0x07E0, "green (0x07E0)");
+    solid(0x001F, "blue (0x001F)");
+    solid(0xFFFF, "white (0xFFFF)");
+
+    // Eight classic vertical colour bars, left to right: white, yellow, cyan,
+    // green, magenta, red, blue, black.
+    static constexpr uint16_t kBars[8] = {0xFFFF, 0xFFE0, 0x07FF, 0x07E0,
+                                          0xF81F, 0xF800, 0x001F, 0x0000};
+    const int bar_width = kWidth / 8;
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            pixels[static_cast<size_t>(y) * kWidth + x] = kBars[x / bar_width];
+        }
+    }
+    publish("8 vertical bars (white/yellow/cyan/green/magenta/red/blue/black)");
+    ESP_LOGI(kTag, "scanout self-test complete; bars are left on the panel for inspection");
     return Result<Unit>::ok(Unit{});
 }
 

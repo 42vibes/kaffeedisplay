@@ -40,6 +40,15 @@ GPIO 0 and 3 are strapping pins used as RGB data. They are outputs after boot;
 do not repurpose. The panel stays black with any init sequence other than the
 ST7701 type-9 sequence. Verify against the board revision at bring-up.
 
+RGB timing verified against Arduino_GFX/ESPHome: PCLK 12 MHz, HSYNC pulse 8 /
+back porch 20 / front porch 10, VSYNC pulse 8 / back porch 10 / front porch 10,
+DE active high, PCLK not inverted. Use the exact Arduino_GFX
+`st7701_type9_init_operations` table for the 480×480 Guition panel; the generic
+`esp_lcd_st7701` default sequence is not compatible. The table includes
+`0xCD 0x00` (disable the MDT test pattern) and ends with `0x3A 0x60`; otherwise
+the panel can show a blue field with a narrow colour-bar band instead of the
+framebuffer.
+
 ## Touch (GT911)
 
 | Signal | GPIO |

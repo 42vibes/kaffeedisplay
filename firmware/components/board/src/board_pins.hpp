@@ -34,12 +34,15 @@ constexpr int kTouchI2cPort = 0;
 constexpr uint8_t kTouchAddress = 0x5D;
 constexpr uint8_t kTouchAddressBackup = 0x14;
 
-// 16 MHz PCLK, 60 Hz refresh with the porch values from the ST7701 driver.
-constexpr int kLcdPclkHz = 16 * 1000 * 1000;
-constexpr int kLcdHsyncPulse = 10;
-constexpr int kLcdHsyncBackPorch = 10;
-constexpr int kLcdHsyncFrontPorch = 20;
-constexpr int kLcdVsyncPulse = 10;
+// Known-good timing for the Guition 4848S040 / ST7701S RGB panel
+// (Arduino_GFX / ESPHome): 12 MHz PCLK, 8/20/10 horizontal and 8/10/10
+// vertical blanking. The previous 16 MHz timing produced a partial blue
+// scanout on real hardware.
+constexpr int kLcdPclkHz = 12 * 1000 * 1000;
+constexpr int kLcdHsyncPulse = 8;
+constexpr int kLcdHsyncBackPorch = 20;
+constexpr int kLcdHsyncFrontPorch = 10;
+constexpr int kLcdVsyncPulse = 8;
 constexpr int kLcdVsyncBackPorch = 10;
 constexpr int kLcdVsyncFrontPorch = 10;
 

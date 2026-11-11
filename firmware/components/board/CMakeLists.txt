@@ -15,5 +15,6 @@ idf_component_register(
         esp_lcd_st7701
         esp_lcd_panel_io_additions
         esp_lvgl_port
+        esp_mm
         esp_timer
 )

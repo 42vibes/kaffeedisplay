@@ -37,6 +37,20 @@ extern "C" void app_main(void) {
         return;
     }
 
+#if CONFIG_BOARD_DISPLAY_SELFTEST
+    result = display->run_scanout_selftest();
+    if (!result) {
+        ESP_LOGE(kTag, "scanout self-test failed: %s (%s)", result.error->code.c_str(),
+                 result.error->message.c_str());
+        return;
+    }
+    esp_ota_mark_app_valid_cancel_rollback();
+    ESP_LOGI(kTag,
+             "diagnostic build: colour bars left on the panel; set "
+             "CONFIG_BOARD_DISPLAY_SELFTEST=n and reflash for the normal LVGL boot");
+    return;
+#endif
+
     result = display->init_lvgl();
     if (!result) {
         ESP_LOGE(kTag, "LVGL init failed: %s (%s)", result.error->code.c_str(),

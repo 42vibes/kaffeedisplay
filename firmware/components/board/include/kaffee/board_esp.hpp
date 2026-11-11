@@ -65,6 +65,10 @@ class EspDisplay final : public IDisplay {
     // should call this with true when the AP starts and false when it stops.
     void set_stay_awake(bool stay_awake);
 
+    // Direct framebuffer colour test used for bring-up diagnostics. It does
+    // not touch LVGL and leaves eight vertical colour bars on the panel.
+    Result<Unit> run_scanout_selftest();
+
     lv_display_t* lv_display() const {
         return lv_display_;
     }

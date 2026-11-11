@@ -58,8 +58,17 @@ Board half:
 - Clean `idf.py build` with `espressif/idf:release-v5.5`; host tests include
   touch-transform forward/inverse checks.
 - Serial boot log from the flashed unit: LEDC backlight at 19011 Hz/12-bit,
-  ST7701S type-9 init, GT911 at 0x5D, temperature 35.2 °C, LVGL port ready,
-  and `app_main` returned with the board tasks still running.
+  ST7701S init, GT911 at 0x5D, temperature 35.2 °C, LVGL port ready, and
+  `app_main` returned with the board tasks still running.
+- Scanout diagnosis: the first flash showed a blue field with a narrow colour
+  band. The init table was the generic ST7701 sequence, not Arduino_GFX
+  `st7701_type9_init_operations`. Replaced it with the exact Guition type-9
+  table (including `0xCD 0x00` and `0x3A 0x60`) and switched to the verified
+  12 MHz / 8-20-10 / 8-10-10 RGB timing.
+- Diagnostic build flashed with `CONFIG_BOARD_DISPLAY_SELFTEST=y`; it fills the
+  framebuffer directly with red, green, blue, white and eight vertical colour
+  bars, then leaves the bars on screen. Awaiting a photo for visual
+  confirmation.
 - Physical touch-corner taps at 0/90/180/270, visual test-pattern checks and
   fps at 0°/90° still require a person at the panel. The board half is
   otherwise complete.
@@ -80,4 +89,5 @@ Board half:
 - AP/QR stay-awake: call `EspDisplay::set_stay_awake(true)` when the AP starts
   and `false` when it stops; this is the board integration point.
 - Remaining hardware checks: corner taps at all four rotations, visual test
-  pattern, fps at 0°/90°, dim/off/wake timing.
+  pattern, fps at 0°/90°, dim/off/wake timing, and visual confirmation of the
+  diagnostic colour bars.
