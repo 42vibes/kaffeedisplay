@@ -7,7 +7,7 @@ dot to change pages; product taps never trigger navigation.
 
 ### Page 1 — Buchen
 
-- Idle: large name tiles, initials, colour. Optional `Gast · Bar` tile.
+- Idle: large name tiles with optional static avatar presets (IDs 1–30), initials overlaid, and initials-only fallback (ID 0). Optional `Gast · Bar` tile.
 - Empty state: `Keine Benutzer – Admin: Seite 3 → WLAN starten`.
 - Selected: name + `Wechseln`, saldo (green credit / red `Offen`), product tiles
   with icon, name and price.
@@ -52,7 +52,8 @@ fonts (Inter/Montserrat subset with umlauts and €), high contrast, big targets
 - Übersicht: Kassenstand, Guthaben, offene Beträge, Differenz, Verbrauch,
   Gastumsatz, Einzahlungen, Ausgaben; alerts (time, debts, backup, storage).
 - Benutzer: create/edit/archive, balance, payment (`Einzahlung`), adjustment,
-  history.
+  history, and a 30-motif avatar picker. Only authenticated admins can change a
+  user's avatar; no upload or additional image decoder is required.
 - Getränke: add/edit/reorder/archive/delete, category, price, icon, colour.
 - Ausgaben: add/edit/void, categories, vendor, note.
 - Kassensturz: counted cash, expected, difference, history.
@@ -64,6 +65,10 @@ fonts (Inter/Montserrat subset with umlauts and €), high contrast, big targets
 - No external fonts/CDNs; bundle everything.
 
 ## Screenshots
+
+For any user-facing change, update this specification, the visible examples in
+`README.md`, and the generated screenshots in the **same branch**. Do not
+claim a new UI state is documented until the screenshots demonstrate it.
 
 The simulator must produce deterministic screenshots into
 `docs/ui/screenshots/` (page 1 idle, page 1 selected, page 2, page 3 with AP/QR,
