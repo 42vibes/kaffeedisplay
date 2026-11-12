@@ -1,6 +1,9 @@
 #include <doctest.h>
 
+#include <string>
+
 #include "format.hpp"
+#include "strings.hpp"
 
 using namespace kaffee;
 
@@ -30,6 +33,17 @@ TEST_CASE("durations and byte sizes are compact") {
     CHECK(ui::format_uptime(120) == "2 Min.");
     CHECK(ui::format_bytes(148 * 1024) == "148 kB");
     CHECK(ui::format_bytes(7 * 1024 * 1024) == "7,0 MB");
+}
+
+TEST_CASE("first-setup strings are German and guide the admin") {
+    const std::string empty = ui::strings::BOOK_EMPTY;
+    CHECK(empty.find("Keine Benutzer") != std::string::npos);
+    CHECK(empty.find("Seite 3") != std::string::npos);
+    CHECK(empty.find("WLAN") != std::string::npos);
+    CHECK(empty.find("Passwort") != std::string::npos);
+    CHECK(std::string(ui::strings::SYSTEM_SETUP_TITLE) == "Erste Einrichtung");
+    CHECK(std::string(ui::strings::SYSTEM_SETUP_PASSWORD) == "Admin-Passwort");
+    CHECK(std::string(ui::strings::SYSTEM_SETUP_HINT).find("Einstellungen") != std::string::npos);
 }
 
 TEST_CASE("month navigation produces stable bounds") {

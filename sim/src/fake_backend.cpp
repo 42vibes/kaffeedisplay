@@ -212,6 +212,14 @@ kaffee::AppSettings FakeBackend::app_settings() const {
     return settings;
 }
 
+bool FakeBackend::must_change_admin_password() const {
+    return false;
+}
+
+std::string FakeBackend::setup_password() const {
+    return {};
+}
+
 kaffee::Result<kaffee::Event> FakeBackend::undo_booking(const std::string& event_id,
                                                         const std::string& request_id) {
     auto result =

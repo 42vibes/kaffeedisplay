@@ -16,7 +16,7 @@ inline constexpr const char* BOOK_PICK_DRINK = "Getränk wählen";
 inline constexpr const char* BOOK_GUEST = "Gast";
 inline constexpr const char* BOOK_GUEST_HINT = "Bar";
 inline constexpr const char* BOOK_CHANGE_USER = "Wechseln";
-inline constexpr const char* BOOK_EMPTY = "Keine Benutzer – Admin: Seite 3 → WLAN starten";
+inline constexpr const char* BOOK_EMPTY = "Keine Benutzer – Admin: Seite 3 → WLAN + Passwort";
 inline constexpr const char* BOOK_NO_PRODUCTS = "Keine Getränke hinterlegt";
 inline constexpr const char* BOOK_FAILED = "Buchung fehlgeschlagen";
 inline constexpr const char* BOOK_GUEST_DISABLED = "Gastverkäufe sind deaktiviert";
@@ -37,6 +37,14 @@ inline constexpr const char* STATS_TIME_WARNING =
 
 // Page 3 — System
 inline constexpr const char* SYSTEM_TITLE = "System";
+inline constexpr const char* SYSTEM_SETUP_TITLE = "Erste Einrichtung";
+inline constexpr const char* SYSTEM_SETUP_PASSWORD = "Admin-Passwort";
+inline constexpr const char* SYSTEM_SETUP_SSID = "WLAN-Netzwerk";
+inline constexpr const char* SYSTEM_SETUP_URL = "Admin-Adresse";
+inline constexpr const char* SYSTEM_SETUP_HINT =
+    "Passwort in der Admin-Weboberfläche unter Einstellungen ändern.";
+inline constexpr const char* SYSTEM_SETUP_AP_HINT =
+    "WLAN starten, dann die Admin-Adresse im Browser öffnen.";
 inline constexpr const char* SYSTEM_WLAN = "WLAN";
 inline constexpr const char* SYSTEM_WLAN_ACTIVE = "Aktiv";
 inline constexpr const char* SYSTEM_WLAN_INACTIVE = "Aus";

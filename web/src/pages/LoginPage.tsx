@@ -77,6 +77,7 @@ export function LoginPage({
             {busy ? de.loading : de.signIn}
           </button>
           <p className="muted text-xs leading-relaxed">{de.loginHint}</p>
+          <p className="muted text-xs leading-relaxed">{de.loginSetupHint}</p>
         </form>
       </div>
     </div>

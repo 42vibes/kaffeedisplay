@@ -236,6 +236,7 @@ export interface Session {
   username: string;
   expires_at: number;
   csrf_token: string;
+  must_change_password?: boolean;
 }
 
 export type ReportKind =

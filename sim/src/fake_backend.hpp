@@ -43,6 +43,8 @@ class FakeBackend final : public kaffee::IUiBackend {
     kaffee::Result<kaffee::Unit> stop_ap() override;
     kaffee::Result<kaffee::Unit> extend_ap(int seconds) override;
     kaffee::AppSettings app_settings() const override;
+    bool must_change_admin_password() const override;
+    std::string setup_password() const override;
     kaffee::Result<kaffee::Event> undo_booking(const std::string& event_id,
                                                const std::string& request_id) override;
     void set_change_callback(kaffee::ChangeCallback callback) override;
