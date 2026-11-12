@@ -8,8 +8,9 @@ The booking UI identifies members using coloured initials. The administrator wan
 
 ## Decision
 
-- Add an integer `avatar_id` to the user record and admin REST API: `0` (initials-only; default), or `1..30` (preset).
+- Add an integer `avatar_id` to the user record and admin REST API: `0` (initials-only or legacy user), or `1..30` (preset). For new users an omitted field requests a random preset; an explicit zero requests initials-only.
 - Persist avatar selection in user-created/updated/archived ledger events as `user_avatar_id`. Omit the field when zero to preserve legacy event hashes. Missing values default to zero when replaying.
+- Assign omitted avatar IDs on POST server-side using the platform random number generator; exclude the previously created user's preset to avoid immediate duplicates. Choose the value **after idempotency lookup** so retries do not reroll. The selected ID is persisted once in the user-created event. Explicit presets and initials-only remain admin-selectable.
 - Preserve existing avatar selection on PATCH when `avatar_id` is absent, including archive/restore. Explicit zero resets to initials-only.
 - Render the presets as five static colours × six decorative motifs in LVGL and the admin React app. Both render initials as the foreground. No image decoder, upload endpoint, asset bundle, or render-loop animation is required.
 - Authorize avatar changes only through the existing authenticated administrator user-management API.
