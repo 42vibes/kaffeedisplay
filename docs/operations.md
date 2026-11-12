@@ -38,6 +38,16 @@ These are admin-only concerns and are not shown on the booking screen.
   work; reports flag estimated timestamps until the next admin sync.
 - An RTC module or LiPo is optional hardware for better offline time; not v1.
 
+## Network / API integration
+
+- `INetworkListener::on_network_state_changed()` and `on_ap_stopped()` are
+  delivered from the network timer task, never from the Wi-Fi event task or an
+  HTTP task. The API must hand start/stop and session cleanup to its own
+  task/queue instead of blocking the callback.
+- `on_ap_stopped()` fires once after a confirmed AP stop; this is the hook for
+  clearing admin sessions and stopping the HTTP server.
+- AP passwords and QR payloads are masked while the AP is inactive.
+
 ## Backup
 
 - Admin → System → Backup downloads a versioned JSON file (no secrets).
@@ -71,6 +81,10 @@ These are admin-only concerns and are not shown on the booking screen.
 - **Corrupt journal**: device boots from the last valid event and quarantines the
   tail; export logs and restore a backup if needed.
 - **Boot loop**: after 3 crashes, AP-only diagnostics mode starts.
+- **Factory reset**: erase the `kaffee_net` NVS namespace (AP credentials and
+  last known time). `NetworkManager::factory_reset_credentials()` performs this
+  in-process and regenerates the AP password; otherwise erase the namespace as
+  part of the storage factory reset.
 
 ## Display settings
 

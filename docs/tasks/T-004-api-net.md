@@ -1,9 +1,13 @@
 # T-004 — HTTP API, auth, AP/time, backup/OTA
 
-Status: blocked on T-001 (service implementation)
+Status: in-progress (net/time portion in review; API still pending)
 Track: backend
-Owner: –
-Branch: `feat/T-004-api-net`
+Owner: opencode (network/time subagent)
+Branch: `feat/T-005-api-net` (net/time sub-worktree)
+
+> **Task/branch number mismatch:** this worktree was allocated as
+> `feat/T-005-api-net`, but T-005 is the reports task. The branch contains only
+> the T-004 network/time portion; API, auth, backup and OTA remain.
 
 ## Context
 
@@ -45,4 +49,9 @@ Implement `firmware/components/api` and `firmware/components/net` against
 
 ## Evidence
 
-<!-- PR, curl transcript, OTA test log -->
+- Net/time PR: https://github.com/Babo96/kaffeedisplay/pull/7
+- `make test-host`: 28 test cases / 632 assertions (network helpers, DNS
+  parser, AP timer re-arm).
+- Docker ESP-IDF 5.5 firmware build: success; forced link check with a temporary
+  `NetworkManager` reference: success.
+- <!-- curl transcript, OTA test log -->

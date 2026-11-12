@@ -54,3 +54,7 @@ CONFIG_LV_USE_QRCODE=y
 # Logs
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+
+# Optional STA+AP NAPT (disabled by default in settings, enabled in the build)
+CONFIG_LWIP_IP_FORWARD=y
+CONFIG_LWIP_IPV4_NAPT=y
