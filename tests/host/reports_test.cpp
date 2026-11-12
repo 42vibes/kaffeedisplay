@@ -780,6 +780,37 @@ TEST_CASE("voids of non-financial events are not transaction rows") {
     CHECK(rows[0][1].text == "Einzahlung");
 }
 
+TEST_CASE("JSON envelope matches the documented report shape") {
+    Scenario s;
+    const Period november = month(NOV_02);
+
+    const auto payload = to_json(s.ledger, ReportKind::Consumption, november);
+    CHECK(payload.at("kind") == "consumption");
+    CHECK(payload.at("period") == "month");
+    CHECK(payload.at("from") == november.from);
+    CHECK(payload.at("to") == november.to);
+    REQUIRE(payload.contains("columns"));
+    REQUIRE(payload.at("columns").is_array());
+    REQUIRE(payload.at("columns").size() == columns(ReportKind::Consumption).size());
+    CHECK(payload.at("columns").at(5).at("key") == "amount_eur");
+    CHECK(payload.at("columns").at(5).at("type") == "money");
+    CHECK(payload.at("columns").at(4).at("type") == "number");
+
+    REQUIRE(payload.contains("rows"));
+    REQUIRE(payload.at("rows").is_array());
+    CHECK_FALSE(payload.at("rows").empty());
+    const auto& row = payload.at("rows").at(0);
+    CHECK(row.contains("kind"));
+    CHECK(row.contains("amount_cents"));
+    CHECK(row.at("amount_cents").is_number_integer());
+    CHECK_FALSE(row.contains("time_quality"));
+
+    // The overview is a table too; date/time columns stay Unix seconds.
+    const auto transactions = to_json(s.ledger, ReportKind::Transactions, november);
+    REQUIRE_FALSE(transactions.at("rows").empty());
+    CHECK(transactions.at("rows").at(0).at("timestamp").is_number_integer());
+}
+
 TEST_CASE("golden CSV files for every report and format") {
     Scenario s;
     const Period november = month(NOV_02);

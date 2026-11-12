@@ -12,6 +12,7 @@ file as you work; put the PR link under Evidence when done.
 | T-005 | Reports + Excel CSV backend | backend | T-001 | reports-agent | review |
 | T-006 | LVGL simulator + screenshots + README | ui | T-003 | ui-agent | review |
 | T-007 | HIL tools, fonts/assets, release pipeline | qa | foundation | tooling-agent | done |
+| T-009 | Firmware integration, reports, factory reset and boot | integration | T-001..T-008 | integration-agent | review |
 
 ## Workflow
 

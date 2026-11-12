@@ -2,8 +2,8 @@
 
 Status: all contract routes are implemented in `firmware/components/api` against
 `docs/api/openapi.yaml`, `service.hpp` and the generated `kaffee/web_assets.hpp`.
-Reports and the final `main`/`net` wiring remain integration work owned by other
-tracks.
+T-009 wires the API into the firmware boot path: reports, factory reset,
+embedded SPA assets, network-driven start/stop and settings/time application.
 
 T-004 is split into two branches:
 
@@ -87,7 +87,52 @@ length, WPA2 password length (8–63 when set), timezone/SNTP lengths, currency,
 locale and a non-negative `max_open_debt_cents`. The merge-vs-replace choice is
 documented here because the spec only says "replace settings".
 
-## Static SPA and captive probes
+## Reports
+
+`GET /reports/{kind}` now uses `kaffee::reports`:
+
+- `period=week|month|year|all` is computed on the device in `Europe/Berlin`;
+  `period=custom` requires `from`/`to` (Unix seconds, `to` exclusive).
+- `format=json` returns the envelope from `docs/api/reports.md`
+  (`kind`, `period`, `from`, `to`, `columns`, `rows`, `time_quality`). Money
+  cells are integer cents.
+- `format=csv_excel` and `format=csv_raw` stream the shared `reports::write_csv`
+  writer. `Accept: text/csv` selects Excel when `format` is omitted.
+- If the device clock is unset, standard periods return `409 time_unset` instead
+  of silently reporting 1970.
+- The API takes a `KaffeeService::ledger_snapshot()` copy for the request,
+  matching the snapshot model from ADR 0012.
+
+## Factory reset
+
+`POST /factory-reset` requires a session, CSRF token and `X-Request-Id`. It
+returns `204` immediately and a helper task then erases the event journal,
+snapshots and settings, resets the network credentials and reboots. The next
+boot goes through the first-boot path and generates a new setup password.
+
+## Server lifecycle
+
+- `main` creates `ApiServer` once and starts/stops it from `ApiController`, a
+  worker task fed by `INetworkListener`. The listener callbacks only enqueue; the
+  worker calls `start()`/`stop()` with a short grace delay so the response that
+  changed the network state can flush.
+- `on_ap_stopped()` runs `IPlatform::notify_ap_stopped()`, which invokes the
+  service callback that clears admin sessions, and then stops the server if no
+  STA interface remains.
+- `ApiServer::stop()` still has its internal deferred-stop fallback for any
+  future call made from the httpd task. The destructor waits briefly for a
+  pending deferred stop.
+- HTTP receive/send timeouts are 10 s so a stalled OTA upload cannot pin a
+  socket indefinitely.
+
+## Settings and time
+
+`KaffeeService::save_settings()` applies display settings and now also forwards
+the merged (secret-bearing) `NetworkSettings`/`TimeSettings` to the platform
+hooks added in ADR 0013. `POST /time/sync` reaches `NetworkManager::sync_time()`
+through `IPlatform::sync_time()`.
+
+## Static SPA, webassets and captive probes
 
 - `GET /` and extension-less paths serve `index.html` with `no-cache`.
 - `/assets/<name>-<hash>.<ext>` uses `public, max-age=31536000, immutable`;
@@ -102,19 +147,11 @@ documented here because the spec only says "replace settings".
   is active and 404 otherwise. The net component owns the AP lifecycle; the API
   only reflects it.
 - Assets come from `kaffee/web_assets.hpp` (`kaffee::api::Asset`,
-  `kaffee_web_asset_lookup`). The `webassets` component is added to `REQUIRES`
-  when the header exists; without it (or with an empty generated table) a small
-  German fallback page is served.
-
-## Server lifecycle
-
-- `main`/`net` start the server only while an interface is up.
-- If `ApiServer::stop()` is called from the `httpd` task (for example inside
-  `POST /ap/stop`), teardown is deferred to a helper task after a short delay so
-  the response can flush and `httpd_stop` does not deadlock. The destructor
-  waits briefly for a pending deferred stop.
-- HTTP receive/send timeouts are 10 s so a stalled OTA upload cannot pin a
-  socket indefinitely.
+  `kaffee_web_asset_lookup`). The `webassets` component is in the API `REQUIRES`;
+  `make build` runs `make assets` first. Without generated assets (clean clone,
+  no `make assets`) a small German fallback page is served. T-009 keeps
+  `kaffee::web::assets()` referenced from `main.cpp` so the table cannot be
+  dropped by the linker.
 
 ## OTA
 
@@ -124,23 +161,21 @@ documented here because the spec only says "replace settings".
 - Incremental SHA-256 is computed while writing; `X-Firmware-SHA256` is verified
   when supplied. `esp_ota_end` validates the image, then the boot partition is
   switched and the device reboots after the response is sent.
-- `main.cpp` keeps rollback armed until `boot_health_check()` passes; the current
-  placeholder only proves the skeleton boots. The real check (storage mounted,
-  service created, UI/net up) is a TODO in `main.cpp`.
+- `main.cpp` keeps rollback armed until `boot_health_check()` passes. The check
+  covers NVS, LittleFS mount, service creation, display/LVGL, the three-page UI
+  and network init. Only then is `esp_ota_mark_app_valid_cancel_rollback()` called.
 
-## Integration TODOs
+## Remaining integration notes
 
-1. **Reports (T-005).** `GET /reports/{kind}` validates the kind and returns
-   `501 not_implemented`. Replace `handle_reports` with the reports component and
-   stream CSV via `send_chunked_text`/`content_disposition`.
-2. **Webassets build (T-007).** Run `tools/embed_web.py`; the API picks the
-   component up automatically and serves the real SPA.
-3. **Main wiring.** Create service/platform, call `ApiServer::create()`, start
-   and stop from net callbacks, and clear sessions when the AP stops.
-4. **Captive DNS.** `net` answers the probe hostnames/unknown hosts; the API
-   handles the probe paths above only when they reach the server.
-5. **Service session revocation.** `change_admin_password()` should clear all
+1. **Serial CLI.** `docs/serial-cli.md` documents `status`, `time set`,
+   `setup-password`, `book`, `void` and `factory-reset`, but no console task is
+   implemented in the firmware yet. HIL write tests and the documented recovery
+   path therefore still need that task (T-007/T-009 follow-up).
+2. **Service session revocation.** `change_admin_password()` should clear all
    sessions (T-001). The API revokes the current one and documents the gap.
+3. **Captive DNS on the device.** The net component answers probe hosts; the API
+   handles the probe paths once the request reaches port 80. This was verified
+   by code inspection and net host tests, not by a phone captive-portal flow.
 
 ## Contract gaps (OpenAPI not changed)
 

@@ -97,6 +97,20 @@ class FakePlatform : public IPlatform {
         ++display_tests;
         return Result<Unit>::ok(Unit{});
     }
+    Result<Unit> apply_network_settings(const NetworkSettings& settings) override {
+        network_settings = settings;
+        ++network_applies;
+        return Result<Unit>::ok(Unit{});
+    }
+    Result<Unit> apply_time_settings(const TimeSettings& settings) override {
+        time_settings = settings;
+        ++time_applies;
+        return Result<Unit>::ok(Unit{});
+    }
+    Result<Unit> reset_network_credentials() override {
+        ++network_resets;
+        return Result<Unit>::ok(Unit{});
+    }
     void notify_ledger_changed() override {
         ++notifications;
     }
@@ -113,6 +127,8 @@ class FakePlatform : public IPlatform {
     NetworkStatus network;
     DisplaySettings display;
     SystemStats stats_;
+    NetworkSettings network_settings;
+    TimeSettings time_settings;
     std::function<void()> ap_stopped_callback;
     uint64_t rng = 0x123456789abcdef0ull;
     Timestamp synced_epoch = 0;
@@ -121,6 +137,9 @@ class FakePlatform : public IPlatform {
     int last_extend = 0;
     int display_tests = 0;
     int notifications = 0;
+    int network_applies = 0;
+    int time_applies = 0;
+    int network_resets = 0;
 };
 
 class FailingSettingsStore final : public ISettingsStore {
@@ -661,6 +680,57 @@ TEST_CASE("accessor snapshots are stable copies") {
     stop = true;
     reader.join();
     CHECK(fixture.service->users().size() == 51);
+}
+
+TEST_CASE("ledger snapshot is a stable report view") {
+    ServiceFixture fixture(true);
+    const std::string user_id = fixture.user("Ada");
+    const std::string product_id = fixture.product("Kaffee", 60);
+    REQUIRE(static_cast<bool>(fixture.service->purchase(user_id, product_id, "snap-buy")));
+
+    const Ledger snapshot = fixture.service->ledger_snapshot();
+    const size_t snapshot_events = snapshot.events().size();
+    CHECK(snapshot.users().size() == 1);
+    CHECK(snapshot.balance(user_id) == -60);
+
+    fixture.user("Ben");
+    CHECK(snapshot.events().size() == snapshot_events);
+    CHECK(fixture.service->ledger_snapshot().events().size() == snapshot_events + 1);
+}
+
+TEST_CASE("settings save applies network and time to the platform") {
+    ServiceFixture fixture(true);
+    Settings next = fixture.service->settings();
+    next.network.ap_ssid = "Kaffeekasse-Test";
+    next.network.hostname = "kaffee-test";
+    next.time.timezone = "Europe/Berlin";
+    next.time.sntp_enabled = false;
+
+    REQUIRE(static_cast<bool>(fixture.service->save_settings(next, "settings-net")));
+    CHECK(fixture.platform.network_applies == 1);
+    CHECK(fixture.platform.time_applies == 1);
+    CHECK(fixture.platform.network_settings.ap_ssid == "Kaffeekasse-Test");
+    CHECK(fixture.platform.network_settings.hostname == "kaffee-test");
+    CHECK_FALSE(fixture.platform.network_settings.ap_password.empty());
+    CHECK(fixture.platform.time_settings.timezone == "Europe/Berlin");
+}
+
+TEST_CASE("factory reset clears storage, settings and sessions") {
+    ServiceFixture fixture(true);
+    fixture.user("Ada");
+    fixture.product("Kaffee", 60);
+    auto session = fixture.service->login("admin", kPassword, "10.0.10.1");
+    REQUIRE(static_cast<bool>(session));
+
+    REQUIRE(static_cast<bool>(fixture.service->factory_reset()));
+    CHECK(fixture.service->users().empty());
+    CHECK(fixture.service->events().empty());
+    CHECK(fixture.service->summary().cash_expected == 0);
+    CHECK_FALSE(static_cast<bool>(fixture.service->validate_session(session.value->token)));
+    CHECK(fixture.service->must_change_admin_password());
+    CHECK(fixture.service->settings().network.ap_ssid.empty());
+    CHECK(fixture.settings_store.stored().admin.password_hash.empty());
+    CHECK(fixture.store.info().event_count == 0);
 }
 
 TEST_CASE("journal compaction is scheduled by the event threshold") {
