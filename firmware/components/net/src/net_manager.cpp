@@ -210,6 +210,7 @@ struct NetworkManager::Impl {
 
     bool sntp_started = false;
     bool mdns_started = false;
+    bool mdns_stopping = false;
     bool napt_running = false;
     std::atomic<uint32_t> upstream_dns{0};
 
@@ -218,6 +219,7 @@ struct NetworkManager::Impl {
     std::atomic<bool> dns_task_exited{false};
     std::atomic<bool> timer_task_exited{false};
     std::atomic<bool> state_notify_pending{false};
+    std::atomic<bool> mdns_stop_pending{false};
     std::atomic<bool> ap_stopped_pending{false};
     std::atomic<bool> ap_stop_pending{false};
     TaskHandle_t dns_task = nullptr;
@@ -497,7 +499,7 @@ struct NetworkManager::Impl {
     }
 
     void ensure_mdns_locked() {
-        if (mdns_started || (!ap_active && !sta_connected)) {
+        if (mdns_started || mdns_stopping || (!ap_active && !sta_connected)) {
             return;
         }
         esp_err_t err = mdns_init();
@@ -518,12 +520,25 @@ struct NetworkManager::Impl {
         }
     }
 
-    void stop_mdns_locked() {
+    // mDNS teardown can block waiting for the mDNS/event tasks. Never call
+    // mdns_free() while holding the network mutex from the Wi-Fi event task:
+    // the event task blocks on that mutex, which deadlocks AP stop. Schedule
+    // the teardown on the network timer task instead.
+    void schedule_mdns_stop_locked() {
+        if (mdns_started && !mdns_stopping) {
+            mdns_stop_pending.store(true);
+        }
+    }
+
+    // Only for shutdown after the timer task has stopped; callers hold mutex.
+    void stop_mdns_now_locked() {
         if (!mdns_started) {
             return;
         }
         mdns_free();
         mdns_started = false;
+        mdns_stopping = false;
+        mdns_stop_pending.store(false);
     }
 
     void update_upstream_dns_locked() {
@@ -764,7 +779,7 @@ struct NetworkManager::Impl {
                     stop_sntp_locked();
                     disable_napt_locked();
                     if (!ap_active) {
-                        stop_mdns_locked();
+                        schedule_mdns_stop_locked();
                     }
                     schedule_reconnect_locked();
                     notify = true;
@@ -813,7 +828,7 @@ struct NetworkManager::Impl {
                         esp_netif_dhcps_stop(ap_netif);
                     }
                     if (!sta_connected) {
-                        stop_mdns_locked();
+                        schedule_mdns_stop_locked();
                     }
                     if (was_desired && !was_active) {
                         ESP_LOGW(kTag, "AP stopped before it became active");
@@ -878,7 +893,7 @@ struct NetworkManager::Impl {
                 stop_sntp_locked();
                 disable_napt_locked();
                 if (!ap_active) {
-                    stop_mdns_locked();
+                    schedule_mdns_stop_locked();
                 }
                 ESP_LOGW(kTag, "STA lost IP");
                 notify = true;
@@ -934,9 +949,18 @@ struct NetworkManager::Impl {
             bool force_stop = false;
             bool notify = false;
             bool ap_stopped = false;
+            bool stop_mdns = false;
             {
                 std::lock_guard<std::mutex> lock(self->mutex);
                 const Timestamp now = uptime_now();
+                stop_mdns = self->mdns_stop_pending.exchange(false);
+                if (stop_mdns && (!self->mdns_started || self->mdns_stopping || self->ap_active ||
+                                  self->sta_connected)) {
+                    // An interface came back (or another teardown is running);
+                    // keep the current instance.
+                    stop_mdns = false;
+                }
+                if (stop_mdns) self->mdns_stopping = true;
                 expired = self->ap_timer.tick(now);
                 force_stop = self->ap_stop_pending.exchange(false);
                 retry_stop = !self->ap_desired && self->ap_active && !self->ap_timer.active();
@@ -953,6 +977,20 @@ struct NetworkManager::Impl {
                 }
                 notify = self->state_notify_pending.exchange(false);
                 ap_stopped = self->ap_stopped_pending.exchange(false);
+            }
+            if (stop_mdns) {
+                mdns_free();
+                bool restart = false;
+                {
+                    std::lock_guard<std::mutex> lock(self->mutex);
+                    self->mdns_started = false;
+                    self->mdns_stopping = false;
+                    if (self->ap_active || self->sta_connected) {
+                        self->ensure_mdns_locked();
+                        restart = self->mdns_started;
+                    }
+                }
+                if (restart) ESP_LOGI(kTag, "mDNS restarted after deferred stop");
             }
             if (notify) {
                 self->emit_state();
@@ -1068,7 +1106,7 @@ NetworkManager::~NetworkManager() {
         impl_->ap_desired = false;
         impl_->listener = nullptr;
         impl_->stop_sntp_locked();
-        impl_->stop_mdns_locked();
+        impl_->stop_mdns_now_locked();
         impl_->disable_napt_locked();
         if (impl_->reconnect_timer != nullptr) {
             esp_timer_stop(impl_->reconnect_timer);
@@ -1337,7 +1375,7 @@ Result<Unit> NetworkManager::stop_ap() {
                     impl_->sta_rssi = 0;
                     impl_->stop_sntp_locked();
                     impl_->disable_napt_locked();
-                    impl_->stop_mdns_locked();
+                    impl_->schedule_mdns_stop_locked();
                     // The forced stop also killed the STA; try to bring the
                     // uplink back so a failed AP stop does not leave us offline.
                     if (impl_->sta_configured_locked()) {
@@ -1374,7 +1412,7 @@ Result<Unit> NetworkManager::stop_ap() {
             esp_netif_dhcps_stop(impl_->ap_netif);
         }
         if (!impl_->sta_connected) {
-            impl_->stop_mdns_locked();
+            impl_->schedule_mdns_stop_locked();
         }
         request_stop_notification = was_active;
     }
@@ -1492,7 +1530,7 @@ Result<Unit> NetworkManager::apply_settings(const NetworkSettings& settings) {
         }
 
         if (hostname_changed && impl_->mdns_started) {
-            impl_->stop_mdns_locked();
+            impl_->schedule_mdns_stop_locked();
             impl_->ensure_mdns_locked();
         }
     }
@@ -1574,7 +1612,7 @@ Result<Unit> NetworkManager::factory_reset_credentials() {
     impl_->ap_timer.stop();
     impl_->stop_dns_locked();
     impl_->disable_napt_locked();
-    impl_->stop_mdns_locked();
+    impl_->schedule_mdns_stop_locked();
     impl_->ap_intent_generation = 0;
     impl_->ap_start_generation = 0;
     impl_->ap_stop_pending_generation = 0;

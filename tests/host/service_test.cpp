@@ -849,6 +849,20 @@ TEST_CASE("service stats include storage, backup and drinks") {
     CHECK(after.drinks_today == 2);
 }
 
+TEST_CASE("drinks today excludes voided purchases") {
+    ServiceFixture fixture(true);
+    const std::string user_id = fixture.user("Ada");
+    const std::string product_id = fixture.product("Kaffee", 50);
+
+    auto sale = fixture.service->purchase(user_id, product_id, "stats-void");
+    REQUIRE(static_cast<bool>(sale));
+    CHECK(fixture.service->stats().drinks_today == 1);
+
+    REQUIRE(static_cast<bool>(
+        fixture.service->void_event(sale.value->id, "mistake", "stats-void-rev")));
+    CHECK(fixture.service->stats().drinks_today == 0);
+}
+
 TEST_CASE("factory reset clears storage, settings and sessions") {
     ServiceFixture fixture(true);
     fixture.user("Ada");

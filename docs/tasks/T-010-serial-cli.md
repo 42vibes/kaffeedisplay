@@ -50,27 +50,42 @@ tests therefore could not run against a real board.
   new setup password and a new AP password, and the provisioning AP active.
 - `make hil` read-only passed against the live AP.
 
-## Known issue found during validation
+## Follow-up live fixes
 
-`ap stop` (and the synchronous AP-stop path in
-`NetworkManager::factory_reset_credentials()`) can hang while holding the
-network mutex on this board: the command never replies and subsequent
-`status` calls block too. The CLI factory reset therefore erases the
-`kaffee_net` NVS namespace directly and reboots instead of calling
-`factory_reset_credentials()`; the reboot stops the AP. This needs a separate
-net/API fix (T-004/T-005 follow-up). `settime.py --status` and HIL read-only are
-unaffected.
-
-Also: `stats.drinks_today` counts purchase events even after they are voided
-(`1` after the test `void`); reports and balances correctly net the reversal.
+1. **`ap stop` deadlock.** Tracing showed `stop_ap()` holding the network mutex
+   while calling `mdns_free()`; the mDNS teardown waits for the Wi-Fi/event task,
+   which was blocked on that same mutex. mDNS teardown is now scheduled on the
+   network timer task (outside the mutex), with an `mdns_stopping` guard so a
+   concurrent AP start either keeps the instance or restarts it after the
+   deferred free. `ap stop` returns promptly, `status` works immediately after,
+   and `ap start` recovers. This also removes the deadlock from
+   `NetworkManager::factory_reset_credentials()`. The API listener/session clear
+   remains deferred through `ApiController::on_ap_stopped()`.
+2. **`drinks_today`.** `KaffeeService::stats()` now counts only non-voided
+   `Purchase`/`GuestSale` events in the current Europe/Berlin day (correct DST
+   boundaries). A host test covers purchase → 1 and void → 0; live serial and
+   `/device` both showed 1 then 0.
+3. **HTTP task stack overflow (found during validation).** Creating a product
+   through the API overflowed the `httpd` task at 10 KiB and rebooted the board.
+   The server stack is now 24 KiB; the ineffective
+   `CONFIG_HTTPD_TASK_STACK_SIZE` line was removed from `sdkconfig.defaults`.
 
 ## Evidence
 
-- `make test-host`: 138 cases / 17,412 assertions pass.
+- `make test-host`: 139 cases / 17,421 assertions pass.
 - `make check`: format, OpenAPI lint, docs links, host/web tests, web build,
   assets and size budgets pass.
 - `make build-docker` (ESP-IDF 5.5.6): app image 0x2b6cc0, 10% partition free.
 - `make flash` on `/dev/ttyUSB0`; boot log confirms storage, UI, network,
   HTTP API, serial console ready, health check ok.
-- Live curl/serial transcripts captured in `/tmp/opencode/t010-*.{log,txt,json}`
-  during the run (secrets redacted; final setup/AP values reported to the owner).
+- Live serial `ap stop` → `OK ap stop`, immediate `status` (AP off), `ap start`
+  → `OK ap start ttl=900`, `status` (AP on); repeated after final flash.
+- Live `book` → `drinks_today=1` in serial and `/device`; `void` →
+  `drinks_today=0` in both. Product creation via API returned 201 in 0.12 s with
+  no panic after the stack fix.
+- API `POST /ap/stop` dropped the connection (expected) but the next `status`
+  worked and the old session returned 401 after AP restart.
+- Final factory reset left `seq=0`, `users=0`, `products=0`, `time=0
+  source=unset`, AP provisioning up with fresh setup/AP passwords.
+- Live curl/serial transcripts captured in `/tmp/opencode/t010*` during the run
+  (secrets redacted; final setup/AP values reported to the owner).

@@ -189,9 +189,9 @@ through `IPlatform::sync_time()`.
    (`status`, `time set`, `setup-password`, `book`, `void`, `factory-reset`).
    T-010 implements the bounded line reader in `firmware/main/serial_console.*`;
    `book`/`void` are locked until `unlock-writes` or a HIL build. HIL write
-   tests now unlock automatically. A known `ap stop`/synchronous AP-stop hang is
-   tracked in the T-010 task file; factory reset erases the network NVS
-   namespace directly and reboots.
+   tests now unlock automatically. The T-010 follow-up defers mDNS teardown off
+   the network mutex, fixing the `ap stop`/`factory_reset_credentials()` hang;
+   factory reset still erases the network NVS namespace directly and reboots.
 2. **Service session revocation.** `change_admin_password()` should clear all
    sessions (T-001). The API revokes the current one and documents the gap.
 3. **Captive DNS on the device.** The net component answers probe hosts; the API

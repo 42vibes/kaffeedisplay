@@ -194,8 +194,11 @@ class SerialConsole {
         va_end(args);
         if (length < 0) return;
         const size_t size = std::min(static_cast<size_t>(length), sizeof(buffer) - 1);
-        write_raw(std::string(buffer, size));
-        write_raw("\r\n");
+        // Keep the line and CRLF in one write so an ESP-IDF log cannot land
+        // between them and corrupt the machine-readable reply.
+        std::string line(buffer, size);
+        line += "\r\n";
+        write_raw(line);
     }
 
     void reply_error(const std::string& code, const std::string& message) {
