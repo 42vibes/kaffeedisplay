@@ -107,41 +107,7 @@ paths:
               required: [name]
               properties:
                 name: { type: string, maxLength: 40 }
-                color: { type: string, pattern: '^#[0-9A-Fa-f]{6}
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/User' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-  /users/{id}:
-    patch:
-      summary: Update or reactivate a user
-      parameters:
-        - $ref: '#/components/parameters/PathId'
-        - $ref: '#/components/parameters/RequestId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name: { type: string, maxLength: 40 }
                 color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
-                active: { type: boolean }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/User' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
- }
                 avatar_id: { type: integer, minimum: 0, maximum: 30, default: 0 }
       responses:
         '201':
@@ -165,18 +131,7 @@ paths:
               type: object
               properties:
                 name: { type: string, maxLength: 40 }
-                color: { type: string, pattern: '^#[0-9A-Fa-f]{6}
-                active: { type: boolean }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/User' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
- }
+                color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
                 avatar_id: { type: integer, minimum: 0, maximum: 30, default: 0 }
                 active: { type: boolean }
       responses:
