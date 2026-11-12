@@ -70,6 +70,26 @@ tests therefore could not run against a real board.
    The server stack is now 24 KiB; the ineffective
    `CONFIG_HTTPD_TASK_STACK_SIZE` line was removed from `sdkconfig.defaults`.
 
+
+## Display scanout fix (follow-up)
+
+The panel image was shifted right by ~55–65 px (UI left clock/content clipped,
+right edge wrapped). The simulator was correct, and the type-9 test crosshair
+shifted with the panel, confirming scanout rather than layout. HBP/HFP/pulse
+sweeps only moved the phase by a few pixels; 16 MHz made it worse. The root
+cause is a PSRAM RGB FIFO underrun: the RGB DMA occasionally fetches a line
+late, so the panel latches the next line offset and wraps.
+
+Fix: five-line internal-RAM bounce buffer (`bounce_buffer_size_px = 5 * 480`)
+with the PSRAM framebuffer still enabled, plus the known-good Guition timing
+`12 MHz, HSYNC 8/50/10, VSYNC 8/20/10`. Measured crosshair shift dropped from
++72.4 px to about +8 px; page dots are centred and page 1 has no edge clipping.
+The HTTP server stack was reduced from 24 KiB to 16 KiB to make room for the
+12 KiB serial-console stack; product creation was re-tested through the API
+(201, no panic).
+Final webcam frames: `/tmp/opencode/t010-display/final-test.jpg`,
+`/tmp/opencode/t010-display/final-page1-bounce6.jpg`.
+
 ## Evidence
 
 - `make test-host`: 139 cases / 17,421 assertions pass.

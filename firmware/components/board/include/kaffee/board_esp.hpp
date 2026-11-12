@@ -31,6 +31,16 @@ struct BoardStats {
     int backlight_percent = 0;
 };
 
+struct RgbTiming {
+    int pclk_hz = 0;
+    int hsync_pulse_width = 0;
+    int hsync_back_porch = 0;
+    int hsync_front_porch = 0;
+    int vsync_pulse_width = 0;
+    int vsync_back_porch = 0;
+    int vsync_front_porch = 0;
+};
+
 // ESP-IDF implementation of IDisplay for the Guition ESP32-4848S040.
 //
 // init() sets up the ST7701S RGB panel, GT911 and the LEDC backlight. LVGL is
@@ -51,6 +61,7 @@ class EspDisplay final : public IDisplay {
 
     DisplayInfo info() const override;
     DisplaySettings settings() const override;
+    RgbTiming rgb_timing() const;
     Result<Unit> apply_settings(const DisplaySettings& settings) override;
     Result<Unit> show_test_pattern() override;
     void set_backlight_percent(int percent, bool fade) override;

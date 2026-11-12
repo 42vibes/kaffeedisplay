@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "kaffee/board_esp.hpp"
+
 #include "driver/uart.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -94,8 +96,8 @@ const char* time_source_name(const TimeInfo& time) {
 
 class SerialConsole {
   public:
-    SerialConsole(KaffeeService& service, IPlatform& platform)
-        : service_(service), platform_(platform) {}
+    SerialConsole(KaffeeService& service, IPlatform& platform, EspDisplay& display)
+        : service_(service), platform_(platform), display_(display) {}
 
     void run() {
         if (!install_uart()) return;
@@ -251,6 +253,7 @@ class SerialConsole {
         if (command == "ap") return cmd_ap(tokens);
         if (command == "setup-password") return cmd_setup_password();
         if (command == "time") return cmd_time(tokens);
+        if (command == "display") return cmd_display(tokens);
         if (command == "book") return cmd_book(tokens);
         if (command == "void") return cmd_void(tokens);
         if (command == "unlock-writes") return cmd_unlock_writes(tokens);
@@ -262,8 +265,8 @@ class SerialConsole {
 
     void cmd_help() {
         reply(
-            "OK help commands=help,status,ap,setup-password,time,book,void,unlock-writes,"
-            "backup,factory-reset,reboot");
+            "OK help commands=help,status,ap,setup-password,time,display,book,void,"
+            "unlock-writes,backup,factory-reset,reboot");
     }
 
     void cmd_status() {
@@ -391,6 +394,65 @@ class SerialConsole {
         reply("OK time set %lld", static_cast<long long>(epoch));
     }
 
+    void cmd_display(const std::vector<std::string>& tokens) {
+        if (tokens.size() == 1 || tokens[1] == "info") return cmd_display_info();
+        if (tokens[1] == "test") {
+            auto shown = platform_.show_display_test();
+            if (!shown) return reply_error(shown.error->code, shown.error->message);
+            reply("OK display test timeout_s=15");
+            return;
+        }
+        if (tokens[1] == "rotation") {
+            int64_t rotation = 0;
+            if (tokens.size() != 3 || !parse_i64(tokens[2], rotation) ||
+                (rotation != 0 && rotation != 90 && rotation != 180 && rotation != 270)) {
+                return reply_error("display-usage", "display rotation <0|90|180|270>");
+            }
+            Settings settings = service_.settings();
+            settings.display.rotation = static_cast<int>(rotation);
+            auto saved = service_.save_settings(settings, new_request_id());
+            if (!saved) return reply_error(saved.error->code, saved.error->message);
+            reply("OK display rotation %lld", static_cast<long long>(rotation));
+            return;
+        }
+        if (tokens[1] == "brightness") {
+            int64_t brightness = 0;
+            if (tokens.size() != 3 || !parse_i64(tokens[2], brightness) || brightness < 0 ||
+                brightness > 100) {
+                return reply_error("display-usage", "display brightness <0..100>");
+            }
+            if (brightness < 5) {
+                // The persisted active brightness range starts at 5%; 0..4 is
+                // a temporary diagnostic setting (0 turns the backlight off).
+                display_.set_backlight_percent(static_cast<int>(brightness), false);
+                reply("OK display brightness %lld temporary=1", static_cast<long long>(brightness));
+                return;
+            }
+            Settings settings = service_.settings();
+            settings.display.brightness_active = static_cast<int>(brightness);
+            auto saved = service_.save_settings(settings, new_request_id());
+            if (!saved) return reply_error(saved.error->code, saved.error->message);
+            reply("OK display brightness %lld", static_cast<long long>(brightness));
+            return;
+        }
+        reply_error("display-usage", "display [test|info|rotation <deg>|brightness <0..100>]");
+    }
+
+    void cmd_display_info() {
+        const DisplayInfo info = display_.info();
+        const DisplaySettings settings = service_.display_settings();
+        const RgbTiming timing = display_.rgb_timing();
+        reply(
+            "OK display info rotation=%d brightness=%d active=%d idle=%d backlight=%d "
+            "width=%d height=%d pclk_hz=%d hsync_pulse=%d hsync_back=%d hsync_front=%d "
+            "vsync_pulse=%d vsync_back=%d vsync_front=%d",
+            info.rotation, info.brightness_percent, settings.brightness_active,
+            settings.brightness_idle, info.backlight_on ? 1 : 0, info.width, info.height,
+            timing.pclk_hz, timing.hsync_pulse_width, timing.hsync_back_porch,
+            timing.hsync_front_porch, timing.vsync_pulse_width, timing.vsync_back_porch,
+            timing.vsync_front_porch);
+    }
+
     void cmd_book(const std::vector<std::string>& tokens) {
         if (!writes_allowed()) {
             return reply_error("writes-disabled",
@@ -504,6 +566,7 @@ class SerialConsole {
 
     KaffeeService& service_;
     IPlatform& platform_;
+    EspDisplay& display_;
     TickType_t writes_until_ = 0;
     bool reset_pending_ = false;
     TickType_t reset_deadline_ = 0;
@@ -517,8 +580,12 @@ void serial_task(void* argument) {
 
 }  // namespace
 
-bool start_serial_console(KaffeeService& service, IPlatform& platform) {
-    static SerialConsole console(service, platform);
+bool start_serial_console(KaffeeService& service, IPlatform& platform, EspDisplay& display) {
+    static SerialConsole console(service, platform, display);
+    // Keep this stack in internal RAM: commands such as display brightness and
+    // factory reset write NVS/flash, during which a PSRAM stack is not safely
+    // accessible. The RGB bounce buffers leave just enough internal RAM for
+    // 12 KiB here.
     if (xTaskCreate(serial_task, "serial_cli", 12288, &console, 3, nullptr) != pdPASS) {
         ESP_LOGE(kTag, "cannot create serial console task");
         return false;

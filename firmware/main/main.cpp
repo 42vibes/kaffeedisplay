@@ -308,7 +308,7 @@ extern "C" void app_main(void) {
     // The serial console is the recovery/HIL interface. Start it after the
     // network so `status`/`ap` reflect the real interface state. It never calls
     // LVGL; all commands go through the service/platform facades.
-    if (start_serial_console(*service, platform)) {
+    if (start_serial_console(*service, platform, *display)) {
         ESP_LOGI(kTag, "serial console started");
     }
 

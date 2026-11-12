@@ -304,6 +304,12 @@ Result<Unit> EspDisplay::init_panel() {
     rgb_config.timings.vsync_back_porch = board::kLcdVsyncBackPorch;
     rgb_config.timings.vsync_front_porch = board::kLcdVsyncFrontPorch;
     rgb_config.timings.flags.pclk_active_neg = false;
+    // The 480x480 RGB scanout reads the PSRAM framebuffer at 12 MHz. Without
+    // bounce buffers a PSRAM hiccup underruns the FIFO and the panel latches
+    // the line late, shifting/wrapping the image horizontally. Six lines of
+    // internal-RAM bounce buffer absorb that without visible tearing while
+    // leaving enough SRAM for the serial console task.
+    rgb_config.bounce_buffer_size_px = 5 * kWidth;
     rgb_config.flags.fb_in_psram = 1;
 
     static st7701_lcd_init_cmd_t init_cmds[board::st7701::kType9InitCount];
@@ -850,6 +856,18 @@ DisplayInfo EspDisplay::info() const {
     result.brightness_percent = current_percent_.load();
     result.backlight_on = result.brightness_percent > 0;
     return result;
+}
+
+RgbTiming EspDisplay::rgb_timing() const {
+    RgbTiming timing;
+    timing.pclk_hz = board::kLcdPclkHz;
+    timing.hsync_pulse_width = board::kLcdHsyncPulse;
+    timing.hsync_back_porch = board::kLcdHsyncBackPorch;
+    timing.hsync_front_porch = board::kLcdHsyncFrontPorch;
+    timing.vsync_pulse_width = board::kLcdVsyncPulse;
+    timing.vsync_back_porch = board::kLcdVsyncBackPorch;
+    timing.vsync_front_porch = board::kLcdVsyncFrontPorch;
+    return timing;
 }
 
 DisplaySettings EspDisplay::settings() const {
