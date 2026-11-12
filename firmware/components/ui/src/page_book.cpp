@@ -11,10 +11,49 @@ namespace kaffee::ui {
 
 namespace {
 
+// Five palettes x six decorative motifs = 30 static, allocation-bounded presets.
+// These are simple LVGL objects: no image decoder, font assets, or animation timer.
 lv_obj_t* make_avatar(lv_obj_t* parent, const std::string& name, const std::string& color,
-                      int size) {
-    lv_obj_t* circle =
-        theme::make_circle(parent, size, parse_hex_color(color, theme::COLOR_ACCENT));
+                      int size, int avatar_id = 0) {
+    static constexpr uint32_t palette[] = {
+        0xD4A373, 0x8FBC8F, 0x7FA7C9, 0xC9A0DC, 0xE07A5F,
+    };
+    const bool preset = avatar_id >= 1 && avatar_id <= kMaxUserAvatarId;
+    const uint32_t fill = preset ? palette[(avatar_id - 1) / 6] : theme::COLOR_ACCENT;
+    lv_obj_t* circle = theme::make_circle(
+        parent, size, preset ? theme::color(fill) : parse_hex_color(color, theme::COLOR_ACCENT));
+    if (preset) {
+        const int unit = std::max(5, size / 6);
+        const int offset = std::max(3, size / 9);
+        const int motif = (avatar_id - 1) % 6;
+        const lv_color_t ink = theme::color(theme::COLOR_BG);
+        auto mark = [&](int x, int y, int w, int h, bool round) {
+            lv_obj_t* obj = lv_obj_create(circle);
+            lv_obj_set_size(obj, w, h);
+            lv_obj_set_pos(obj, x, y);
+            lv_obj_set_scrollable(obj, false);
+            lv_obj_set_clickable(obj, false);
+            lv_obj_set_style_radius(obj, round ? LV_RADIUS_CIRCLE : 1, 0);
+            lv_obj_set_style_bg_color(obj, ink, 0);
+            lv_obj_set_style_bg_opa(obj, LV_OPA_40, 0);
+            lv_obj_set_style_border_width(obj, 0, 0);
+            lv_obj_set_style_pad_all(obj, 0, 0);
+        };
+        switch (motif) {
+            case 0: mark(offset, offset, unit, unit, true); break;
+            case 1: mark(size - offset - unit, offset, unit, unit, true); break;
+            case 2:
+                mark(offset, size - offset - unit, unit, unit, true);
+                mark(size - offset - unit, offset, unit, unit, true);
+                break;
+            case 3: mark(offset, offset, unit * 2, std::max(3, unit / 2), false); break;
+            case 4: mark(size - offset - unit, size - offset - unit, unit, unit, true); break;
+            default:
+                mark(offset, offset, unit, unit, true);
+                mark(size - offset - unit, size - offset - unit, unit, unit, true);
+                break;
+        }
+    }
     lv_obj_t* text = theme::make_label(circle, initials(name).c_str(), theme::font_body_bold(),
                                        theme::color(theme::COLOR_BG));
     lv_obj_center(text);
@@ -70,7 +109,7 @@ void UiAppImpl::refresh_book_page() {
         lv_obj_set_style_pad_column(card, 10, 0);
 
         lv_obj_t* avatar = guest_mode_ ? make_avatar(card, strings::BOOK_GUEST, "#D4A373", 46)
-                                       : make_avatar(card, user->name, user->color, 46);
+                                       : make_avatar(card, user->name, user->color, 46, user->avatar_id);
         (void)avatar;
 
         lv_obj_t* names = theme::make_column(card, 0);
@@ -205,7 +244,7 @@ void UiAppImpl::refresh_book_page() {
         lv_obj_set_style_pad_row(item, 5, 0);
         theme::set_pressed_feedback(item, theme::color(theme::COLOR_SURFACE_ALT));
 
-        make_avatar(item, member.name, member.color, 42);
+        make_avatar(item, member.name, member.color, 42, member.avatar_id);
         lv_obj_t* name = theme::make_label(item, member.name.c_str(), theme::font_body(),
                                            theme::color(theme::COLOR_TEXT));
         lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
