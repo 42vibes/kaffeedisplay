@@ -25,7 +25,7 @@ constexpr int kLoginMaxFailures = 5;
 constexpr uint64_t kLoginWindowSeconds = 60;
 constexpr uint64_t kLoginBackoffBaseSeconds = 5;
 constexpr uint64_t kLoginBackoffMaxSeconds = 300;
-constexpr uint32_t kAdminIterations = 50000;
+constexpr uint32_t kAdminIterations = 10000;
 constexpr size_t kAdminSaltBytes = 16;
 constexpr size_t kSessionTokenBytes = 16;
 constexpr size_t kSetupPasswordLength = 16;
@@ -836,7 +836,7 @@ Result<Session> KaffeeServiceImpl::login(const std::string& username, const std:
     const std::string computed =
         pbkdf2_sha256_hex(password, credentials.salt, credentials.iterations);
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     const uint64_t mono = monotonic_seconds();
     const Timestamp wall = now();
     if (rate_limited_locked(client_ip, mono)) {
@@ -848,6 +848,25 @@ Result<Session> KaffeeServiceImpl::login(const std::string& username, const std:
     if (!user_ok || !password_ok) {
         record_login_failure_locked(client_ip, mono);
         return Result<Session>::fail("auth", "invalid credentials");
+    }
+
+    // Rehash credentials created before the iteration-count change. The new
+    // hash is computed outside the mutex; the save is skipped if another
+    // request changed the credentials meanwhile.
+    if (settings_.admin.iterations != kAdminIterations) {
+        const std::string new_salt = random_hex(platform_, kAdminSaltBytes);
+        const std::string old_hash = settings_.admin.password_hash;
+        const std::string old_salt = settings_.admin.salt;
+        lock.unlock();
+        const std::string new_hash = pbkdf2_sha256_hex(password, new_salt, kAdminIterations);
+        lock.lock();
+        if (settings_.admin.password_hash == old_hash && settings_.admin.salt == old_salt) {
+            Settings updated = settings_;
+            updated.admin.salt = new_salt;
+            updated.admin.iterations = kAdminIterations;
+            updated.admin.password_hash = new_hash;
+            if (settings_store_.save(updated)) settings_ = updated;
+        }
     }
 
     login_states_.erase(client_ip);

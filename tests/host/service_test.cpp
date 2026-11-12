@@ -304,6 +304,31 @@ TEST_CASE("upgrade without a stored setup password rotates admin credentials") {
     CHECK(static_cast<bool>(service->login("admin", service->setup_password(), "10.0.0.13")));
 }
 
+TEST_CASE("login upgrades old PBKDF2 iteration counts") {
+    TempDir dir;
+    FileEventStore store((dir.path / "events").string());
+    MemorySettingsStore settings_store;
+    FakePlatform platform;
+    configure_platform(platform);
+
+    Settings seeded;
+    seeded.admin.username = "admin";
+    seeded.admin.salt = "00112233445566778899aabbccddeeff";
+    seeded.admin.iterations = 1000;
+    seeded.admin.password_hash =
+        pbkdf2_sha256_hex(kPassword, seeded.admin.salt, seeded.admin.iterations);
+    REQUIRE(static_cast<bool>(settings_store.save(seeded)));
+    REQUIRE(static_cast<bool>(settings_store.save_setup_password(kPassword)));
+
+    auto created = KaffeeService::create(store, settings_store, platform);
+    REQUIRE(static_cast<bool>(created));
+    auto service = std::move(*created.value);
+    CHECK(settings_store.stored().admin.iterations == 1000);
+    REQUIRE(static_cast<bool>(service->login("admin", kPassword, "10.0.0.14")));
+    CHECK(settings_store.stored().admin.iterations == 10000);
+    CHECK(static_cast<bool>(service->login("admin", kPassword, "10.0.0.15")));
+}
+
 TEST_CASE("sessions, csrf and monotonic expiry") {
     ServiceFixture fixture(true);
     auto session = fixture.service->login("admin", kPassword, "10.0.0.5");

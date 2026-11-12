@@ -4,6 +4,11 @@
 #include <cstdint>
 #include <string>
 
+#ifdef ESP_PLATFORM
+#include <mbedtls/md.h>
+#include <mbedtls/pkcs5.h>
+#endif
+
 #include "kaffee/sha256.hpp"
 
 namespace kaffee {
@@ -68,6 +73,20 @@ std::string pbkdf2_sha256_hex(std::string_view password, std::string_view salt_h
                               uint32_t iterations, size_t dk_len) {
     if (iterations == 0) iterations = 1;
     const std::string salt = hex_decode(salt_hex);
+
+#ifdef ESP_PLATFORM
+    // mbedTLS uses the ESP32-S3 SHA accelerator. The portable loop below is
+    // kept for host tests (and for non-32-byte derived keys) but needs ~14 s
+    // for the 50k-iteration admin hash on the device.
+    if (dk_len == 32) {
+        unsigned char digest[32] = {};
+        const int rc = mbedtls_pkcs5_pbkdf2_hmac_ext(
+            MBEDTLS_MD_SHA256, reinterpret_cast<const unsigned char*>(password.data()),
+            password.size(), reinterpret_cast<const unsigned char*>(salt.data()), salt.size(),
+            static_cast<unsigned int>(iterations), static_cast<uint32_t>(sizeof(digest)), digest);
+        if (rc == 0) return hex_encode(digest, sizeof(digest));
+    }
+#endif
 
     std::string out;
     out.reserve(dk_len * 2);

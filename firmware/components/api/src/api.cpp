@@ -495,14 +495,33 @@ Result<nlohmann::json> read_json_object(httpd_req_t* req, size_t limit) {
 
 void set_session_cookie(httpd_req_t* req, std::string_view token, Timestamp expires_at,
                         Timestamp now) {
-    int64_t max_age = expires_at - now;
+    constexpr int64_t kFallbackMaxAge = 30 * 60;
+    int64_t max_age = kFallbackMaxAge;
+    if (expires_at > 0 && now > 0 && expires_at > now) max_age = expires_at - now;
     if (max_age < 60) max_age = 60;
     if (max_age > 8 * 3600) max_age = 8 * 3600;
-    char cookie[256];
-    std::snprintf(cookie, sizeof(cookie),
-                  "kaffee_session=%.*s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%lld",
-                  static_cast<int>(token.size()), token.data(), static_cast<long long>(max_age));
+
+    if (token.empty()) {
+        ESP_LOGE(kTag, "refusing to set an empty session cookie");
+        return;
+    }
+
+    // httpd_resp_set_hdr() stores the value pointer, it does not copy it. The
+    // buffer must stay valid until httpd sends the response, so it cannot be a
+    // local. esp_http_server handles one request at a time per server.
+    static char cookie[320];
+    const int length = std::snprintf(
+        cookie, sizeof(cookie),
+        "kaffee_session=%.*s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%lld",
+        static_cast<int>(token.size()), token.data(), static_cast<long long>(max_age));
+    if (length <= 0 || static_cast<size_t>(length) >= sizeof(cookie)) {
+        ESP_LOGE(kTag, "session cookie buffer too small (token_len=%u)",
+                 static_cast<unsigned>(token.size()));
+        return;
+    }
     httpd_resp_set_hdr(req, "Set-Cookie", cookie);
+    ESP_LOGI(kTag, "session cookie set: token_len=%u header_len=%d",
+             static_cast<unsigned>(token.size()), length);
 }
 
 void clear_session_cookie(httpd_req_t* req) {
