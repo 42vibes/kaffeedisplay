@@ -108,7 +108,7 @@ paths:
               properties:
                 name: { type: string, maxLength: 40 }
                 color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
-                avatar_id: { type: integer, minimum: 0, maximum: 30, default: 0 }
+                avatar_id: { type: integer, minimum: 0, maximum: 30, description: "Omit for a random built-in avatar (1..30); send 0 for initials only." }
       responses:
         '201':
           description: Created
