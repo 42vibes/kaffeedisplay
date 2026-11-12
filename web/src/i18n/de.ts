@@ -127,6 +127,9 @@ export const de = {
   allGood: "Keine offenen Hinweise.",
 
   // users
+  userAvatar: "Benutzerbild",
+  userAvatarNone: "Nur Initialen",
+  userAvatarPreset: "Motiv",
   searchUsers: "Benutzer suchen",
   showInactive: "Inaktive anzeigen",
   createUserTitle: "Benutzer anlegen",
