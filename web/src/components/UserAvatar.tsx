@@ -34,12 +34,14 @@ export function UserAvatar({ name, color, avatarId = 0, size = 32 }: AvatarProps
             draggable={false}
             className="absolute inset-0 h-full w-full rounded-full object-cover"
           />
-          <span
-            className="absolute bottom-0 right-0 rounded-md bg-espresso-950/95 px-0.5 text-cream-50"
-            style={{ fontSize: Math.max(9, Math.round(size * 0.25)), lineHeight: 1.3 }}
-          >
-            {initials}
-          </span>
+          {size >= 40 ? (
+            <span
+              className="absolute bottom-0 right-0 rounded-md bg-espresso-950/95 px-0.5 text-cream-50"
+              style={{ fontSize: Math.max(9, Math.round(size * 0.22)), lineHeight: 1.3 }}
+            >
+              {initials}
+            </span>
+          ) : null}
         </>
       ) : (
         <span>{initials}</span>
