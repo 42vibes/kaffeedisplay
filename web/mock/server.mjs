@@ -456,13 +456,22 @@ function stopAp() {
   notify("ap stopped");
 }
 
+function randomUserAvatar() {
+  const previous = users.at(-1)?.avatar_id ?? 0;
+  const available = previous >= 1 && previous <= 30 ? 29 : 30;
+  const chosen = 1 + Math.floor(Math.random() * available);
+  return available === 29 && chosen >= previous ? chosen + 1 : chosen;
+}
+
 function addUser(body) {
   const id = `usr_${Math.random().toString(16).slice(2, 8)}`;
   const user = {
     id,
     name: String(body.name ?? "Neu").slice(0, 40),
     color: body.color ?? "#D4A373",
-    avatar_id: Number.isInteger(body.avatar_id) && body.avatar_id >= 0 && body.avatar_id <= 30 ? body.avatar_id : 0,
+    avatar_id: Number.isInteger(body.avatar_id) && body.avatar_id >= 0 && body.avatar_id <= 30
+      ? body.avatar_id
+      : randomUserAvatar(),
     active: true,
     created_at: now,
   };
