@@ -1,0 +1,51 @@
+name: Regenerate I4 avatars and screenshots (temporary)
+
+on:
+  push:
+    branches: [feature/user-avatars]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: avatar-i4-resources
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Generate I4 palette resources and web PNGs
+        run: |
+          python3 tools/generate_avatar_art.py
+          python3 tools/check_avatar_i4.py
+      - name: Install simulator dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev zlib1g-dev
+      - name: Regenerate actual LVGL screenshots
+        run: make screenshots
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --prefix web
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Regenerate admin screenshots
+        run: npm --prefix web run screenshots
+      - name: Commit generated resources and screenshots
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firmware/components/ui/src/avatar_art_generated.hpp web/src/components/avatarArt.generated.ts docs/ui/screenshots
+          if ! git diff --cached --quiet; then
+            git commit -m "assets: switch 30 avatars to LVGL I4 and refresh screenshots"
+            git push origin HEAD:feature/user-avatars
+          fi
