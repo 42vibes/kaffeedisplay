@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -5,6 +6,9 @@
 #include "esp_littlefs.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_partition.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "kaffee/api.hpp"
 #include "kaffee/board_esp.hpp"
 #include "kaffee/littlefs_store.hpp"
@@ -17,6 +21,7 @@
 #include "lvgl.h"
 #include "nvs_flash.h"
 #include "platform_adapter.hpp"
+#include "storage_boot.hpp"
 
 namespace {
 
@@ -31,23 +36,85 @@ struct BootState {
     bool service = false;
     bool ui = false;
     bool network = false;
+    bool api = false;
 };
 
 // Boot health gate for the dual-OTA rollback window. The image is confirmed
-// only after storage, service, display/LVGL, the three-page UI and the network
-// manager have all come up. A failed component leaves rollback armed.
+// only after storage, service, display/LVGL, the three-page UI, the network
+// manager and the API controller/server have all come up. A failed component
+// leaves rollback armed.
 bool boot_health_check(const BootState& state) {
     const bool healthy = state.nvs && state.storage && state.display && state.lvgl &&
-                         state.service && state.ui && state.network;
+                         state.service && state.ui && state.network && state.api;
     ESP_LOGI(kTag,
-             "boot health: nvs=%d storage=%d display=%d lvgl=%d service=%d ui=%d network=%d => %s",
+             "boot health: nvs=%d storage=%d display=%d lvgl=%d service=%d ui=%d network=%d "
+             "api=%d => %s",
              state.nvs, state.storage, state.display, state.lvgl, state.service, state.ui,
-             state.network, healthy ? "ok" : "failed");
+             state.network, state.api, healthy ? "ok" : "failed");
     return healthy;
 }
 
 void log_failure(const char* what, const kaffee::Error& error) {
     ESP_LOGE(kTag, "%s failed: %s (%s)", what, error.code.c_str(), error.message.c_str());
+}
+
+// True only when every byte is erased (0xFF). Used once after a failed mount:
+// a new/blank partition may be formatted, but an existing corrupt filesystem
+// must not be silently wiped because it may contain the ledger.
+bool partition_is_blank(const char* label) {
+    const esp_partition_t* partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_LITTLEFS, label);
+    if (partition == nullptr) return false;
+
+    static uint8_t buffer[4096];
+    for (size_t offset = 0; offset < partition->size; offset += sizeof(buffer)) {
+        const size_t length = std::min(static_cast<size_t>(sizeof(buffer)),
+                                       static_cast<size_t>(partition->size - offset));
+        if (esp_partition_read(partition, offset, buffer, length) != ESP_OK) return false;
+        for (size_t i = 0; i < length; ++i) {
+            if (buffer[i] != 0xFF) return false;
+        }
+    }
+    return true;
+}
+
+bool mount_storage() {
+    esp_vfs_littlefs_conf_t fs_conf = {};
+    fs_conf.base_path = kMountPoint;
+    fs_conf.partition_label = "storage";
+    fs_conf.format_if_mount_failed = false;
+    fs_conf.dont_mount = false;
+
+    esp_err_t err = esp_vfs_littlefs_register(&fs_conf);
+    const bool blank = err != ESP_OK && partition_is_blank("storage");
+    const kaffee::boot::StorageAction action = kaffee::boot::storage_action(err == ESP_OK, blank);
+    if (action == kaffee::boot::StorageAction::FormatBlankThenMount) {
+        ESP_LOGW(kTag, "LittleFS partition is blank; formatting once during first boot");
+        err = esp_littlefs_format("storage");
+        if (err == ESP_OK) {
+            err = esp_vfs_littlefs_register(&fs_conf);
+        } else {
+            ESP_LOGE(kTag, "LittleFS format of blank partition failed: %s", esp_err_to_name(err));
+        }
+    }
+
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag,
+                 "LittleFS mount failed: %s. Refusing to format existing data "
+                 "(ledger preserved); OTA rollback stays armed.",
+                 esp_err_to_name(err));
+        return false;
+    }
+
+    size_t total = 0;
+    size_t used = 0;
+    if (esp_littlefs_info("storage", &total, &used) == ESP_OK) {
+        ESP_LOGI(kTag, "storage mounted at %s: %u/%u bytes used", kMountPoint,
+                 static_cast<unsigned>(used), static_cast<unsigned>(total));
+    } else {
+        ESP_LOGI(kTag, "storage mounted at %s", kMountPoint);
+    }
+    return true;
 }
 
 }  // namespace
@@ -70,27 +137,14 @@ extern "C" void app_main(void) {
 
     ESP_LOGI(kTag, "Kaffeekasse booting");
 
-    // Mount the LittleFS data partition declared in partitions.csv. The journal
-    // store mounts/loads the ledger through KaffeeService later.
-    esp_vfs_littlefs_conf_t fs_conf = {};
-    fs_conf.base_path = kMountPoint;
-    fs_conf.partition_label = "storage";
-    fs_conf.format_if_mount_failed = true;
-    fs_conf.dont_mount = false;
-    err = esp_vfs_littlefs_register(&fs_conf);
-    if (err != ESP_OK) {
-        ESP_LOGE(kTag, "LittleFS mount failed: %s", esp_err_to_name(err));
-    } else {
-        size_t total = 0;
-        size_t used = 0;
-        if (esp_littlefs_info("storage", &total, &used) == ESP_OK) {
-            ESP_LOGI(kTag, "storage mounted at %s: %u/%u bytes used", kMountPoint,
-                     static_cast<unsigned>(used), static_cast<unsigned>(total));
-        } else {
-            ESP_LOGI(kTag, "storage mounted at %s", kMountPoint);
-        }
-        state.storage = true;
+    // Mount the LittleFS data partition declared in partitions.csv. A failed
+    // mount must not silently wipe a corrupted ledger; only a blank partition is
+    // formatted once (see storage_boot.hpp).
+    if (!mount_storage()) {
+        // Leave OTA rollback armed: a bad image/partition must not be confirmed.
+        return;
     }
+    state.storage = true;
 
     static kaffee::NvsSettingsStore settings_store;
     static kaffee::LittleFsEventStore event_store(kMountPoint);
@@ -190,14 +244,17 @@ extern "C" void app_main(void) {
     static std::unique_ptr<kaffee::ApiServer> api_server =
         created_api ? std::move(*created_api.value) : nullptr;
     static kaffee::ApiController* api_controller = nullptr;
+    bool api_controller_started = false;
     if (api_server) {
         static kaffee::ApiController controller(*api_server, *service, platform);
         if (!controller.start()) {
             ESP_LOGE(kTag, "API controller task creation failed");
         } else {
             api_controller = &controller;
+            api_controller_started = true;
         }
     }
+    state.api = api_server != nullptr && api_controller_started;
 
     if (auto initialized = network.init(); !initialized) {
         log_failure("network init", *initialized.error);
@@ -224,6 +281,26 @@ extern "C" void app_main(void) {
             if (auto started = service->start_ap(); !started) {
                 log_failure("provisioning AP start", *started.error);
             }
+        }
+    }
+
+    // Wait briefly for the API controller to react to the AP/STA notification.
+    // If an interface is up, a missing HTTP server is a health failure; the
+    // controller also retries on its own every few seconds.
+    if (state.network) {
+        bool interface_expected = false;
+        for (int attempt = 0; attempt < 30; ++attempt) {
+            const kaffee::NetworkStatus status = network.status();
+            interface_expected = status.ap_active || status.sta_connected || status.ap_starting;
+            if (interface_expected && api_server != nullptr && api_server->running()) break;
+            if (!interface_expected && attempt >= 5) break;
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        const kaffee::NetworkStatus status = network.status();
+        interface_expected = status.ap_active || status.sta_connected;
+        if (interface_expected && api_server != nullptr && !api_server->running()) {
+            ESP_LOGE(kTag, "interface is up but the HTTP server did not start");
+            state.api = false;
         }
     }
 

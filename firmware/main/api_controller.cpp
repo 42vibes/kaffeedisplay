@@ -6,6 +6,7 @@ namespace kaffee {
 namespace {
 constexpr const char* kTag = "kaffee.api";
 constexpr uint32_t kStopGraceMs = 250;
+constexpr uint32_t kRetryIntervalMs = 5000;
 }  // namespace
 
 ApiController::ApiController(ApiServer& server, KaffeeService& service, PlatformAdapter& platform)
@@ -34,7 +35,9 @@ void ApiController::task_entry(void* arg) {
 
 void ApiController::loop() {
     for (;;) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        // Wake on network changes or every few seconds so a failed HTTP start
+        // is retried while an interface is up.
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(kRetryIntervalMs));
 
         if (ap_stopped_pending_.exchange(false)) {
             platform_.notify_ap_stopped();

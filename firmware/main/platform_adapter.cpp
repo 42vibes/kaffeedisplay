@@ -66,15 +66,11 @@ NetworkStatus PlatformAdapter::network_status() const {
 }
 
 Result<Unit> PlatformAdapter::start_ap() {
-    auto result = network_.start_ap();
-    if (result) set_ap_active(true);
-    return result;
+    return network_.start_ap();
 }
 
 Result<Unit> PlatformAdapter::stop_ap() {
-    auto result = network_.stop_ap();
-    if (result) set_ap_active(false);
-    return result;
+    return network_.stop_ap();
 }
 
 Result<Unit> PlatformAdapter::extend_ap(int seconds) {
@@ -115,6 +111,8 @@ void PlatformAdapter::set_ap_stopped_callback(std::function<void()> callback) {
 }
 
 void PlatformAdapter::set_ap_active(bool active) {
+    if (ap_active_ == active) return;
+    ap_active_ = active;
     display_.set_stay_awake(active);
 }
 
