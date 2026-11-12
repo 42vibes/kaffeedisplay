@@ -343,7 +343,8 @@ esp_err_t handle_users_create(RequestContext& ctx) {
     if (!avatar) return send_service_error(ctx.req, result_error(avatar));
 
     // Omitted avatar_id requests a random preset; an explicit zero uses initials.
-    const bool has_avatar = body.value->contains("avatar_id") && !(*body.value)["avatar_id"].is_null();
+    const bool has_avatar =
+        body.value->contains("avatar_id") && !(*body.value)["avatar_id"].is_null();
     const int avatar_id = has_avatar ? static_cast<int>(*avatar.value) : -1;
     auto& service = ctx.server.service();
     auto event = service.create_user(trimmed_name, user_color, ctx.request_id, avatar_id);
