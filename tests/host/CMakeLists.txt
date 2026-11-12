@@ -22,6 +22,7 @@ set(REPORTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/reports)
 set(NET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/net)
 set(API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/api)
 set(UI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/ui)
+set(BOARD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/board)
 
 add_executable(kaffee_tests
   doctest_main.cpp
@@ -34,6 +35,7 @@ add_executable(kaffee_tests
   api_util_test.cpp
   api_contract_test.cpp
   ui_format_test.cpp
+  touch_transform_test.cpp
   ${DOMAIN_DIR}/src/domain.cpp
   ${DOMAIN_DIR}/src/json.cpp
   ${DOMAIN_DIR}/src/sha256.cpp
@@ -59,6 +61,7 @@ target_include_directories(kaffee_tests PRIVATE
   ${API_DIR}/include
   ${API_DIR}/src
   ${UI_DIR}/src
+  ${BOARD_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
 )
 

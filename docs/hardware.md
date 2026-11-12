@@ -40,6 +40,15 @@ GPIO 0 and 3 are strapping pins used as RGB data. They are outputs after boot;
 do not repurpose. The panel stays black with any init sequence other than the
 ST7701 type-9 sequence. Verify against the board revision at bring-up.
 
+RGB timing verified against Arduino_GFX/ESPHome: PCLK 12 MHz, HSYNC pulse 8 /
+back porch 20 / front porch 10, VSYNC pulse 8 / back porch 10 / front porch 10,
+DE active high, PCLK not inverted. Use the exact Arduino_GFX
+`st7701_type9_init_operations` table for the 480×480 Guition panel; the generic
+`esp_lcd_st7701` default sequence is not compatible. The table includes
+`0xCD 0x00` (disable the MDT test pattern) and ends with `0x3A 0x60`; otherwise
+the panel can show a blue field with a narrow colour-bar band instead of the
+framebuffer.
+
 ## Touch (GT911)
 
 | Signal | GPIO |
@@ -50,8 +59,10 @@ ST7701 type-9 sequence. Verify against the board revision at bring-up.
 | RST | not connected |
 | Address | 0x5D |
 
-Poll at ~100 Hz; software-reset if probing fails. No calibration needed.
-Touch coordinates must be transformed for display rotation 90/180/270.
+Poll at ~100 Hz. There is no reset or INT line, so recovery after a failed probe
+re-creates the GT911 driver; a hardware reset is not possible. No calibration
+needed. Touch coordinates are transformed for display rotation 90/180/270 (LVGL
+applies the same rotation formula to pointer input).
 
 ## Power and thermals
 
@@ -84,6 +95,11 @@ Touch coordinates must be transformed for display rotation 90/180/270.
   buffers stay 480×480.
 - Software rotation at 90/270 may impact fps; benchmark and prefer hardware scan
   direction if the ST7701 revision supports it.
-- Backlight: LEDC ~20 kHz, 12-bit, gamma-corrected. Two on states: active and
-  idle/dim. Screen-off after timeout; touch wakes. QR screen stays awake while
-  the AP is active.
+- The RGB panel uses one PSRAM scanout framebuffer (`num_fbs=1`) and two LVGL
+  draw buffers. Tear-free scanout double buffering is not provided by the
+  current `esp_lvgl_port` 2.9.0 integration.
+- Backlight: LEDC 19 kHz, 12-bit, gamma-corrected. 20 kHz at 12-bit is not
+  reachable from the 80 MHz APB clock (it needs a divider below 1), so 19 kHz is
+  used. Two on states: active and idle/dim. Screen-off after timeout; touch
+  wakes. QR screen stays awake while the AP is active via the board
+  `set_stay_awake(true)` hold.
