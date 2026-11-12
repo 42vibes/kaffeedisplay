@@ -11,7 +11,7 @@ describe("UserAvatar", () => {
   });
 
   it("renders embedded cartoon artwork with an initials badge", () => {
-    render(<UserAvatar name="Ada Lovelace" color="#123456" avatarId={30} />);
+    render(<UserAvatar name="Ada Lovelace" color="#123456" avatarId={30} size={48} />);
     const avatar = screen.getByText("AL").parentElement;
     expect(avatar?.querySelector("img")).toHaveAttribute(
       "src",
@@ -23,7 +23,7 @@ describe("UserAvatar", () => {
     const sources = new Set<string>();
     for (let id = 1; id <= 30; id += 1) {
       const { container, unmount } = render(
-        <UserAvatar name="Ada Lovelace" color="#123456" avatarId={id} />,
+        <UserAvatar name="Ada Lovelace" color="#123456" avatarId={id} size={48} />,
       );
       expect(screen.getByText("AL")).toBeInTheDocument();
       const image = container.querySelector("img");
@@ -32,6 +32,14 @@ describe("UserAvatar", () => {
       unmount();
     }
     expect(sources.size).toBe(30);
+  });
+
+  it("shows just the illustration in compact 32px picker cells", () => {
+    const { container } = render(
+      <UserAvatar name="Ada Lovelace" color="#123456" avatarId={1} size={32} />,
+    );
+    expect(container.querySelector("img")).not.toBeNull();
+    expect(screen.queryByText("AL")).toBeNull();
   });
 
   it("falls back to initials for unsupported IDs", () => {
