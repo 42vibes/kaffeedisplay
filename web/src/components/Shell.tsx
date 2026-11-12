@@ -13,29 +13,54 @@ const nav = [
   { to: "/system", label: de.system },
 ];
 
-export function Shell({ children, onLogout }: { children: ReactNode; onLogout: () => void }) {
+export function Shell({
+  children,
+  username,
+  onLogout,
+}: {
+  children: ReactNode;
+  username: string;
+  onLogout: () => void;
+}) {
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
-      <aside className="border-b border-cream-100/10 bg-espresso-900/70 p-4 lg:min-h-screen lg:border-b-0 lg:border-r">
-        <div className="flex items-center justify-between lg:block">
-          <div>
+    <div className="min-h-screen lg:grid lg:grid-cols-[250px_1fr]">
+      <aside className="border-b border-cream-100/10 bg-espresso-900/70 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 lg:block lg:p-4">
+          <div className="min-w-0">
             <div className="text-xl font-semibold tracking-tight">{de.app}</div>
-            <div className="muted mt-1 text-xs">{de.tagline}</div>
+            <div className="muted mt-1 truncate text-xs">{de.tagline}</div>
           </div>
-          <button className="btn lg:hidden" onClick={onLogout} type="button">
-            {de.signOut}
-          </button>
+          <div className="lg:hidden">
+            <button
+              className="btn min-h-9 px-3 py-1 text-sm"
+              onClick={onLogout}
+              type="button"
+            >
+              {de.signOut}
+            </button>
+          </div>
         </div>
-        <nav className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:mt-8 lg:flex-col lg:overflow-visible">
+
+        <div className="hidden px-4 pb-2 lg:block">
+          <div className="rounded-xl border border-cream-100/10 px-3 py-2">
+            <div className="label">{de.admin}</div>
+            <div className="mt-0.5 truncate text-sm">{username}</div>
+          </div>
+        </div>
+
+        <nav
+          aria-label={de.app}
+          className="flex gap-1.5 overflow-x-auto px-3 pb-2 lg:mt-4 lg:flex-col lg:overflow-visible lg:px-4"
+        >
           {nav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `rounded-xl px-3 py-2 text-sm whitespace-nowrap transition ${
+                `shrink-0 rounded-xl px-3 py-2 text-sm whitespace-nowrap transition ${
                   isActive
-                    ? "bg-amber-400 text-espresso-950 font-semibold"
+                    ? "bg-amber-400 font-semibold text-espresso-950"
                     : "text-cream-100/80 hover:bg-cream-100/10"
                 }`
               }
@@ -44,11 +69,17 @@ export function Shell({ children, onLogout }: { children: ReactNode; onLogout: (
             </NavLink>
           ))}
         </nav>
-        <button className="btn mt-6 hidden w-full lg:flex" onClick={onLogout} type="button">
-          {de.signOut}
-        </button>
+
+        <div className="hidden p-4 lg:block">
+          <button className="btn w-full" onClick={onLogout} type="button">
+            {de.signOut}
+          </button>
+        </div>
       </aside>
-      <main className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-10">{children}</main>
+
+      <main className="mx-auto w-full max-w-6xl px-3 pt-4 pb-10 sm:px-6 sm:pt-6 lg:p-10">
+        {children}
+      </main>
     </div>
   );
 }

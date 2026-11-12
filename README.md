@@ -44,6 +44,7 @@ make flash
 | `docs/data-model.md` | Domain types and ledger schema |
 | `docs/accounting.md` | Post-pay, guest cash sales, cash reconciliation |
 | `docs/api/openapi.yaml` | Admin REST contract |
+| `docs/api/reports.md` | Expected report JSON payload shape and CSV conventions |
 | `docs/ui.md` | Device and admin UI specification |
 | `docs/security.md` | Threat model, auth, AP policy |
 | `docs/operations.md` | Provisioning, backup, OTA, recovery |

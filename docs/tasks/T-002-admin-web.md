@@ -1,9 +1,9 @@
 # T-002 — Admin SPA: all pages + German UI
 
-Status: ready
+Status: review
 Track: web
-Owner: –
-Branch: `feat/T-002-admin-web`
+Owner: web-agent
+Branch: `feat/T-002-web`
 
 ## Context
 
@@ -55,4 +55,31 @@ found — coordinate first).
 
 ## Evidence
 
-<!-- PR link, screenshots -->
+- PR: https://github.com/Babo96/kaffeedisplay/pull/6
+- Screenshots: `docs/ui/screenshots/web-*.png`, regenerated with
+  `npm --prefix web run screenshots` (starts mock + Vite itself).
+- Unit: `npm --prefix web test` — 26 tests (money parse/format incl. junk
+  input, Europe/Berlin DST periods, report summaries, CSRF refresh, QR,
+  StatCard, BarChart).
+- E2E: `CI=1 npm --prefix web run e2e` — 9 Playwright tests (login/logout,
+  create/archive/restore user, topup, custom-period CSV filename, product CRUD
+  with full `ProductInput` assertions, expense void, display + AP start/stop
+  with QR, untrusted-time warning, 360 px no horizontal overflow). Each test
+  resets the mock through the mock-only `POST /api/v1/__test/reset` route.
+- Build: `npm --prefix web run build` — 120.0 KiB gzip total (budget 400 KiB).
+- `make check` green locally; firmware build skipped without `idf.py` (CI job).
+
+## Contract assumptions
+
+- `PATCH /products/{id}` sends the full `ProductInput` (name, category,
+  price_cents, icon, color, sort, active); the mock rejects partial bodies.
+- `POST /auth/login` may omit `csrf_token`; the SPA always refreshes the
+  session and token through `GET /auth/me` before the first write.
+- `ApStatus.wifi_qr` / `url_qr` are plain payload strings; the SPA renders them
+  locally with `qrcode-generator@2.0.4` (ADR 0011) and still accepts
+  `data:image/*`.
+- Report JSON shape is frozen in `docs/api/reports.md` (envelope,
+  `columns`/`rows`, `sections`, flat scalars, `totals`, `time_quality`).
+- Factory reset has no OpenAPI route yet, so the danger-zone button is disabled
+  and labelled “Werkseinstellungen (noch nicht verfügbar)”. The SPA keeps a
+  guarded `POST /api/v1/factory-reset` path ready for T-004.

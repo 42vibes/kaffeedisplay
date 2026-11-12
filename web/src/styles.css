@@ -43,6 +43,15 @@ textarea {
   font: inherit;
 }
 
+a {
+  text-decoration: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-amber-400);
+  outline-offset: 2px;
+}
+
 ::selection {
   background: var(--color-amber-400);
   color: var(--color-espresso-950);
@@ -67,18 +76,24 @@ textarea {
   background: rgba(243, 234, 220, 0.06);
   color: var(--color-cream-50);
   cursor: pointer;
+  white-space: nowrap;
   transition:
     background 150ms ease,
     border-color 150ms ease,
     transform 100ms ease;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
   background: rgba(243, 234, 220, 0.12);
 }
 
-.btn:active {
+.btn:active:not(:disabled) {
   transform: translateY(1px);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .btn-primary {
@@ -88,13 +103,17 @@ textarea {
   font-weight: 650;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background: #e9b071;
 }
 
 .btn-danger {
   color: var(--color-rust-400);
   border-color: rgba(224, 122, 95, 0.35);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(224, 122, 95, 0.12);
 }
 
 .input {
@@ -111,6 +130,27 @@ textarea {
 .input:focus {
   border-color: var(--color-amber-400);
   box-shadow: 0 0 0 3px rgba(221, 161, 94, 0.15);
+}
+
+.input:disabled {
+  opacity: 0.6;
+}
+
+textarea.input {
+  resize: vertical;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--color-amber-400);
+}
+
+input[type="range"] {
+  accent-color: var(--color-amber-400);
+}
+
+::placeholder {
+  color: var(--color-cream-500);
+  opacity: 0.7;
 }
 
 .label {

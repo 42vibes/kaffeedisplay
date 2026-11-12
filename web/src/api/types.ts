@@ -14,6 +14,12 @@ export interface UserWithBalance extends User {
   last_booking_at?: number;
 }
 
+export interface UserInput {
+  name: string;
+  color?: string;
+  active?: boolean;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -65,9 +71,18 @@ export interface Event {
   type: EventType;
   user_id?: string;
   user_name?: string;
+  user_color?: string;
   product_id?: string;
   product_name?: string;
   product_category?: string;
+  product_icon?: string;
+  product_color?: string;
+  expense_id?: string;
+  expense_category?: string;
+  expense_description?: string;
+  expense_vendor?: string;
+  counted_cents?: Cents;
+  expected_cents?: Cents;
   unit_amount_cents?: Cents;
   amount_cents?: Cents;
   payment?: "balance" | "cash" | "";
@@ -84,9 +99,9 @@ export interface Expense {
   ts: number;
   category: string;
   description: string;
-  vendor: string;
+  vendor?: string;
   amount_cents: Cents;
-  note: string;
+  note?: string;
   voided: boolean;
 }
 
@@ -147,10 +162,12 @@ export interface Settings {
   display: DisplaySettings;
   network: {
     ap_ssid: string;
+    ap_password?: string;
     ap_window_s: number;
     hostname: string;
     sta_enabled: boolean;
     sta_ssid: string;
+    sta_password?: string;
     napt_enabled: boolean;
   };
   time: {
@@ -187,15 +204,15 @@ export interface ApStatus {
 }
 
 export interface NetworkStatus {
-  ap_active: boolean;
-  ap_starting: boolean;
-  ap_remaining_s: number;
-  ap_ssid: string;
-  ap_password: string;
-  ap_ip: string;
-  sta_connected: boolean;
-  sta_ip: string;
-  sta_rssi: number;
+  ap_active?: boolean;
+  ap_starting?: boolean;
+  ap_remaining_s?: number;
+  ap_ssid?: string;
+  ap_password?: string;
+  ap_ip?: string;
+  sta_connected?: boolean;
+  sta_ip?: string;
+  sta_rssi?: number;
 }
 
 export interface DeviceStatus {
@@ -209,8 +226,9 @@ export interface DeviceStatus {
   temperature_c: number;
   temperature_valid: boolean;
   mac: string;
-  network: NetworkStatus;
+  network?: NetworkStatus;
   time: TimeInfo;
+  last_backup_at?: number;
   drinks_today: number;
 }
 
@@ -238,6 +256,47 @@ export interface ReportQuery {
   from?: number;
   to?: number;
   format?: ReportFormat;
+}
+
+export type ReportCellType = "text" | "money" | "number" | "date" | "datetime" | "boolean";
+
+export interface ReportColumn {
+  key: string;
+  label?: string;
+  type?: ReportCellType;
+}
+
+export interface ReportSection {
+  title?: string;
+  columns?: ReportColumn[];
+  rows?: Array<Record<string, unknown>>;
+  totals?: Record<string, unknown>;
+}
+
+/**
+ * The OpenAPI contract allows any object for report payloads. The SPA renders
+ * it generically: optional `sections`, an optional top-level `rows` table and
+ * scalar key/value pairs for summary-style reports.
+ */
+export interface ReportPayload {
+  kind?: ReportKind;
+  period?: ReportPeriod;
+  from?: number;
+  to?: number;
+  time_quality?: {
+    trusted?: boolean;
+    source?: string;
+    last_sync?: number;
+  };
+  columns?: ReportColumn[];
+  rows?: Array<Record<string, unknown>>;
+  totals?: Record<string, unknown>;
+  sections?: ReportSection[];
+  [key: string]: unknown;
+}
+
+export interface LogsResponse {
+  lines: string[];
 }
 
 export interface ApiError {
