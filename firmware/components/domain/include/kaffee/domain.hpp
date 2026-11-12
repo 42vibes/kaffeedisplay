@@ -13,6 +13,7 @@
 namespace kaffee {
 
 using Timestamp = int64_t;  // Unix seconds, UTC
+
 inline constexpr int kMaxUserAvatarId = 30;  // 0 = initials only; 1..30 = fixed presets
 
 enum class TimeSource { Synced, Restored, Unset };
