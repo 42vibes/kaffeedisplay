@@ -13,9 +13,9 @@ nlohmann::json user_to_json(const User& u) {
     nlohmann::json j{{"id", u.id},
                      {"name", u.name},
                      {"color", u.color},
-                     {"avatar_id", u.avatar_id},
                      {"active", u.active},
                      {"created_at", u.created_at}};
+    j["avatar_id"] = u.avatar_id;
     if (u.archived_at) j["archived_at"] = u.archived_at;
     return j;
 }
