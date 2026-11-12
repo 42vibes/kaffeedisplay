@@ -455,6 +455,10 @@ paths:
   /reports/{kind}:
     get:
       summary: Report data or CSV export
+      description: |
+        Period boundaries are calculated on the device in Europe/Berlin. For
+        `period=all`, the JSON envelope omits `from`/`to` because the range is
+        unbounded. JSON money cells are integer cents.
       parameters:
         - name: kind
           in: path
@@ -470,11 +474,11 @@ paths:
             default: month
         - name: from
           in: query
-          description: Unix seconds, required for custom
+          description: Unix seconds, required for custom; omitted for all
           schema: { type: integer, format: int64 }
         - name: to
           in: query
-          description: Unix seconds, exclusive
+          description: Unix seconds, exclusive; omitted for all
           schema: { type: integer, format: int64 }
         - name: format
           in: query
@@ -495,6 +499,17 @@ paths:
           headers:
             Content-Disposition:
               schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: Device time is unset for a bounded period
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Report generation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /settings:
     get:
       summary: All non-secret settings
@@ -670,6 +685,18 @@ paths:
       responses:
         '204': { description: Restored }
         '400': { $ref: '#/components/responses/BadRequest' }
+  /factory-reset:
+    post:
+      summary: Erase ledger, settings and network credentials, then reboot
+      description: |
+        Returns before the erase and reboot run so the response can flush.
+        The device returns to the first-boot state with a new setup password.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '204': { description: Factory reset accepted; the device reboots }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: Missing or invalid CSRF token }
   /ota:
     post:
       summary: Upload a firmware image
@@ -762,6 +789,11 @@ components:
         username: { type: string }
         csrf_token: { type: string, description: Send as X-CSRF-Token on writes. }
         expires_at: { type: integer, format: int64 }
+        must_change_password:
+          type: boolean
+          description: |
+            True until the initial admin password has been changed. The SPA
+            must show the forced first-login change form.
     User:
       type: object
       properties:

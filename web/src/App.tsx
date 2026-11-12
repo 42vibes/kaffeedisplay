@@ -14,6 +14,7 @@ import { de } from "./i18n/de";
 import { CashPage } from "./pages/CashPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ExpensesPage } from "./pages/ExpensesPage";
+import { FirstLoginPage } from "./pages/FirstLoginPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { ReportsPage } from "./pages/ReportsPage";
@@ -87,6 +88,21 @@ export function App() {
         onLogin={(next) => {
           setNotice("");
           setSessionState(next);
+        }}
+      />
+    );
+  }
+
+  if (session.must_change_password) {
+    return (
+      <FirstLoginPage
+        onDone={() => {
+          // The API revokes the current token and clears the cookie on a
+          // successful password change; don't call logout() here or its 401
+          // would overwrite the "password changed" notice.
+          setSession(null);
+          setSessionState(null);
+          setNotice(de.passwordChanged);
         }}
       />
     );

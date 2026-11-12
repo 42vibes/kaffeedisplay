@@ -63,7 +63,7 @@ constexpr const char kFallbackIndex[] = R"HTML(<!doctype html>
 </html>
 )HTML";
 
-const Asset kFallbackAssets[] = {
+constexpr Asset kFallbackAssets[] = {
     {"/index.html", "text/html; charset=utf-8", kFallbackIndex, {}, false},
 };
 

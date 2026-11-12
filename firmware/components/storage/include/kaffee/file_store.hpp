@@ -28,6 +28,9 @@ class JsonFileSettingsStore final : public ISettingsStore {
     Result<Settings> load() override;
     Result<Unit> save(const Settings& settings) override;
     Result<Unit> reset() override;
+    Result<std::string> load_setup_password() override;
+    Result<Unit> save_setup_password(const std::string& password) override;
+    Result<Unit> clear_setup_password() override;
 
     const std::string& path() const {
         return path_;
@@ -46,13 +49,20 @@ class MemorySettingsStore final : public ISettingsStore {
     Result<Settings> load() override;
     Result<Unit> save(const Settings& settings) override;
     Result<Unit> reset() override;
+    Result<std::string> load_setup_password() override;
+    Result<Unit> save_setup_password(const std::string& password) override;
+    Result<Unit> clear_setup_password() override;
 
     const Settings& stored() const {
         return settings_;
     }
+    const std::string& stored_setup_password() const {
+        return setup_password_;
+    }
 
   private:
     Settings settings_;
+    std::string setup_password_;
 };
 
 }  // namespace kaffee

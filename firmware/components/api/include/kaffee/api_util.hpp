@@ -12,6 +12,8 @@
 #include <vector>
 
 #include "kaffee/domain.hpp"
+#include "kaffee/json.hpp"
+#include "kaffee/service.hpp"
 
 namespace kaffee {
 namespace api {
@@ -143,6 +145,12 @@ std::string lower_ascii(std::string_view value);
 std::string hex_lower(const uint8_t* data, size_t size);
 bool is_valid_color(std::string_view color);
 bool parse_bool_text(std::string_view value, bool& out);
+
+// --- Diagnostics payloads ------------------------------------------------
+// Shared by the handlers and host contract tests. Use the service-owned
+// SystemStats so storage/backup/drinks fields are populated.
+nlohmann::json time_info_json(const TimeInfo& time);
+nlohmann::json device_status_json(const SystemStats& stats);
 // Redacts log lines that may contain credentials/tokens before they are kept
 // in the in-RAM ring served by GET /logs.
 bool contains_secret_marker(std::string_view line);

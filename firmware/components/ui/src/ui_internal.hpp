@@ -166,6 +166,7 @@ class UiAppImpl final : public UiApp, public UiControl {
     bool stay_awake_ = false;
     bool last_sta_connected_ = false;
     bool last_time_trusted_ = false;
+    bool last_must_change_ = false;
     DisplaySettings last_display_;
 
     bool ap_hold_active_ = false;

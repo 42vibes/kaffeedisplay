@@ -197,8 +197,8 @@ test("applies display settings and starts/stops the AP with QR codes", async ({ 
     page.getByRole("img", { name: "QR-Code: Admin-Seite öffnen" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Werkseinstellungen (noch nicht verfügbar)" }),
-  ).toBeDisabled();
+    page.getByRole("button", { name: "Werkseinstellungen" }),
+  ).toBeEnabled();
 
   await page.getByRole("button", { name: "WLAN stoppen" }).click();
   const stop = page.getByRole("dialog");
@@ -225,4 +225,18 @@ test("renders the dashboard at 360 px", async ({ page }) => {
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
   );
   expect(hasHorizontalOverflow).toBe(false);
+});
+
+test("factory reset requires the typed confirmation and calls the API", async ({ page }) => {
+  await login(page);
+  await page.goto("/system");
+  await page.getByRole("button", { name: "Werkseinstellungen" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("Werkseinstellungen wiederherstellen?");
+  const confirm = dialog.getByRole("button", { name: "Werkseinstellungen" });
+  await expect(confirm).toBeDisabled();
+  await dialog.getByRole("textbox").fill("WERKSRESET");
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(page.getByText("Werkseinstellungen werden wiederhergestellt.")).toBeVisible();
 });

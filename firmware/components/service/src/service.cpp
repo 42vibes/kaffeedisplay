@@ -25,9 +25,10 @@ constexpr int kLoginMaxFailures = 5;
 constexpr uint64_t kLoginWindowSeconds = 60;
 constexpr uint64_t kLoginBackoffBaseSeconds = 5;
 constexpr uint64_t kLoginBackoffMaxSeconds = 300;
-constexpr uint32_t kAdminIterations = 50000;
+constexpr uint32_t kAdminIterations = 10000;
 constexpr size_t kAdminSaltBytes = 16;
 constexpr size_t kSessionTokenBytes = 16;
+constexpr size_t kSetupPasswordLength = 16;
 // Compact after this many journaled events, or when the partition is 90% full.
 constexpr uint32_t kCompactEventThreshold = 256;
 
@@ -166,6 +167,7 @@ class KaffeeServiceImpl final : public KaffeeService {
     std::vector<Event> events() const override;
     std::vector<Expense> expenses() const override;
     std::vector<CashCount> cash_counts() const override;
+    std::shared_ptr<const Ledger> ledger_snapshot() const override;
 
     // --- Auth ---
     Result<Session> login(const std::string& username, const std::string& password,
@@ -190,6 +192,7 @@ class KaffeeServiceImpl final : public KaffeeService {
     // --- Backup ---
     Result<std::string> export_backup() override;
     Result<Unit> import_backup(const std::string& json, const std::string& request_id) override;
+    Result<Unit> factory_reset() override;
 
     void set_change_callback(ChangeCallback callback) override;
     void refresh() override;
@@ -352,24 +355,56 @@ Result<Unit> KaffeeServiceImpl::init() {
     if (settings_.admin.username.empty()) settings_.admin.username = "admin";
 
     bool dirty = false;
+    bool setup_changed = false;
     const bool has_credentials =
         !settings_.admin.password_hash.empty() && !settings_.admin.salt.empty();
     if (!has_credentials) {
-        const std::string initial = random_password(platform_, 16);
+        const std::string initial = random_password(platform_, kSetupPasswordLength);
         settings_.admin.salt = random_hex(platform_, kAdminSaltBytes);
         settings_.admin.iterations = kAdminIterations;
         settings_.admin.password_hash =
             pbkdf2_sha256_hex(initial, settings_.admin.salt, settings_.admin.iterations);
         setup_password_ = initial;
         must_change_password_ = true;
+        setup_changed = true;
         dirty = true;
     } else {
         must_change_password_ = !has_password_change_audit();
+        if (must_change_password_) {
+            auto stored_setup = settings_store_.load_setup_password();
+            if (!stored_setup) {
+                return Result<Unit>::fail(stored_setup.error->code, stored_setup.error->message);
+            }
+            setup_password_ = *stored_setup.value;
+            if (setup_password_.empty()) {
+                // Upgrade from firmware that kept the password in RAM only, or
+                // a damaged key. Rotate the admin credentials so the device is
+                // not permanently locked out of the web UI.
+                const std::string initial = random_password(platform_, kSetupPasswordLength);
+                settings_.admin.salt = random_hex(platform_, kAdminSaltBytes);
+                settings_.admin.iterations = kAdminIterations;
+                settings_.admin.password_hash =
+                    pbkdf2_sha256_hex(initial, settings_.admin.salt, settings_.admin.iterations);
+                setup_password_ = initial;
+                setup_changed = true;
+                dirty = true;
+            }
+        } else {
+            setup_password_.clear();
+            // Remove a stale key after a completed password change.
+            (void)settings_store_.clear_setup_password();
+        }
     }
 
     if (settings_.network.ap_password.empty()) {
         settings_.network.ap_password = random_password(platform_, 12);
         dirty = true;
+    }
+    // Persist the setup password before credentials: if the settings write
+    // fails, the next boot regenerates credentials and overwrites this key.
+    if (setup_changed) {
+        auto saved_setup = settings_store_.save_setup_password(setup_password_);
+        if (!saved_setup) return saved_setup;
     }
     if (dirty) {
         auto saved = settings_store_.save(settings_);
@@ -424,6 +459,8 @@ void KaffeeServiceImpl::rollback_settings_locked(const Settings& previous) {
     settings_ = previous;
     settings_store_.save(previous);
     platform_.apply_display_settings(previous.display);
+    platform_.apply_network_settings(previous.network);
+    platform_.apply_time_settings(previous.time);
 }
 
 // ---------------------------------------------------------------------------
@@ -730,6 +767,13 @@ std::vector<CashCount> KaffeeServiceImpl::cash_counts() const {
     return ledger_.cash_counts();
 }
 
+std::shared_ptr<const Ledger> KaffeeServiceImpl::ledger_snapshot() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto snapshot = std::make_shared<Ledger>(ledger_);
+    snapshot->clear_commit_hook();
+    return snapshot;
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 
@@ -792,7 +836,7 @@ Result<Session> KaffeeServiceImpl::login(const std::string& username, const std:
     const std::string computed =
         pbkdf2_sha256_hex(password, credentials.salt, credentials.iterations);
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     const uint64_t mono = monotonic_seconds();
     const Timestamp wall = now();
     if (rate_limited_locked(client_ip, mono)) {
@@ -804,6 +848,25 @@ Result<Session> KaffeeServiceImpl::login(const std::string& username, const std:
     if (!user_ok || !password_ok) {
         record_login_failure_locked(client_ip, mono);
         return Result<Session>::fail("auth", "invalid credentials");
+    }
+
+    // Rehash credentials created before the iteration-count change. The new
+    // hash is computed outside the mutex; the save is skipped if another
+    // request changed the credentials meanwhile.
+    if (settings_.admin.iterations != kAdminIterations) {
+        const std::string new_salt = random_hex(platform_, kAdminSaltBytes);
+        const std::string old_hash = settings_.admin.password_hash;
+        const std::string old_salt = settings_.admin.salt;
+        lock.unlock();
+        const std::string new_hash = pbkdf2_sha256_hex(password, new_salt, kAdminIterations);
+        lock.lock();
+        if (settings_.admin.password_hash == old_hash && settings_.admin.salt == old_salt) {
+            Settings updated = settings_;
+            updated.admin.salt = new_salt;
+            updated.admin.iterations = kAdminIterations;
+            updated.admin.password_hash = new_hash;
+            if (settings_store_.save(updated)) settings_ = updated;
+        }
     }
 
     login_states_.erase(client_ip);
@@ -902,6 +965,10 @@ Result<Unit> KaffeeServiceImpl::change_admin_password(const std::string& current
         settings_ = updated;
         setup_password_.clear();
         must_change_password_ = false;
+        // Best effort: the in-memory password is gone and a reboot with a
+        // completed audit record will not load this key again. If NVS erasure
+        // fails, the stale key is ignored and removed on the next boot.
+        (void)settings_store_.clear_setup_password();
         result = audit_locked("admin_password_changed", "{}", request_id, "admin");
         if (result) maybe_compact_locked();
     }
@@ -956,10 +1023,34 @@ Result<Unit> KaffeeServiceImpl::save_settings(const Settings& input,
         auto valid = validate_settings(merged);
         if (!valid) return valid;
 
-        auto applied = platform_.apply_display_settings(merged.display);
-        if (!applied) return applied;
+        // Persist first, then apply. A platform apply failure restores the
+        // previous settings blob and live state; a save failure leaves the
+        // device untouched.
+        const Settings previous = settings_;
+        auto rollback = [&]() {
+            (void)settings_store_.save(previous);
+            (void)platform_.apply_display_settings(previous.display);
+            (void)platform_.apply_network_settings(previous.network);
+            (void)platform_.apply_time_settings(previous.time);
+        };
+
         auto saved = settings_store_.save(merged);
         if (!saved) return saved;
+        auto applied = platform_.apply_display_settings(merged.display);
+        if (!applied) {
+            rollback();
+            return applied;
+        }
+        auto network = platform_.apply_network_settings(merged.network);
+        if (!network) {
+            rollback();
+            return network;
+        }
+        auto time = platform_.apply_time_settings(merged.time);
+        if (!time) {
+            rollback();
+            return time;
+        }
 
         settings_ = merged;
         const std::string meta = settings_to_json(settings_, false).dump();
@@ -1102,10 +1193,32 @@ Result<Unit> KaffeeServiceImpl::import_backup(const std::string& json,
         }
 
         platform_.apply_display_settings(settings_.display);
+        platform_.apply_network_settings(settings_.network);
+        platform_.apply_time_settings(settings_.time);
         auto audit = audit_locked("backup_restored", "{}", request_id, "admin");
         if (!audit) return audit;
         return Result<Unit>::ok(Unit{});
     });
+}
+
+Result<Unit> KaffeeServiceImpl::factory_reset() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sessions_.clear();
+    login_states_.clear();
+
+    auto erased_store = store_.factory_reset();
+    if (!erased_store) return erased_store;
+    auto erased_settings = settings_store_.reset();
+    if (!erased_settings) return erased_settings;
+
+    // Do not generate replacement credentials here: the next boot must show a
+    // fresh setup password through the first-boot path (ADR 0013).
+    settings_ = Settings{};
+    setup_password_.clear();
+    must_change_password_ = true;
+    last_backup_at_ = 0;
+    ledger_.reset();
+    return Result<Unit>::ok(Unit{});
 }
 
 void KaffeeServiceImpl::set_change_callback(ChangeCallback callback) {
@@ -1113,7 +1226,6 @@ void KaffeeServiceImpl::set_change_callback(ChangeCallback callback) {
     change_callback_ = std::move(callback);
     if (notify_pending_) notifier_cv_.notify_one();
 }
-
 void KaffeeServiceImpl::refresh() {
     notify_changed();
 }

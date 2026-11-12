@@ -8,6 +8,7 @@
 
 #include "api_internal.hpp"
 #include "esp_log.h"
+#include "kaffee/reports.hpp"
 
 namespace kaffee {
 namespace api {
@@ -152,14 +153,6 @@ bool validate_settings(const Settings& settings, const Settings& base, Error& er
 
 // --- Response builders ---------------------------------------------------
 
-json time_info_json(const TimeInfo& time) {
-    return json{{"now", time.now},
-                {"source", Ledger::time_source_name(time.source)},
-                {"last_sync", time.last_sync},
-                {"last_source", time.last_source},
-                {"trusted", time.trusted}};
-}
-
 json ap_status_json(const NetworkStatus& network) {
     const std::string ip =
         network.ap_ip.empty() ? (network.ap_active ? "192.168.4.1" : "") : network.ap_ip;
@@ -183,34 +176,6 @@ json ap_status_json(const NetworkStatus& network) {
         status["url_qr"] = "";
     }
     return status;
-}
-
-json device_status_json(const SystemStats& stats) {
-    json network{{"ap_active", stats.network.ap_active},
-                 {"ap_starting", stats.network.ap_starting},
-                 {"ap_remaining_s", stats.network.ap_remaining_s},
-                 {"ap_ssid", stats.network.ap_ssid},
-                 {"ap_ip", stats.network.ap_ip},
-                 {"sta_connected", stats.network.sta_connected},
-                 {"sta_ip", stats.network.sta_ip},
-                 {"sta_rssi", stats.network.sta_rssi}};
-    return json{{"firmware_version", stats.firmware_version},
-                {"build_date", stats.build_date},
-                {"uptime_s", stats.uptime_s},
-                {"free_heap", stats.free_heap},
-                {"min_free_heap", stats.min_free_heap},
-                {"free_psram", stats.free_psram},
-                {"storage_used", stats.storage.used_bytes},
-                {"storage_total", stats.storage.total_bytes},
-                {"storage_mounted", stats.storage.mounted},
-                {"storage_degraded", stats.storage.degraded},
-                {"temperature_c", stats.chip_temperature_c},
-                {"temperature_valid", stats.temperature_valid},
-                {"mac", stats.mac},
-                {"network", std::move(network)},
-                {"time", time_info_json(stats.time)},
-                {"last_backup_at", stats.last_backup_at},
-                {"drinks_today", stats.drinks_today}};
 }
 
 // Serialises events with the derived fields the contract exposes: `voided`
@@ -290,7 +255,8 @@ json session_json(KaffeeService& service, const Session& session) {
         {"username", service.settings().admin.username.empty() ? std::string("admin")
                                                                : service.settings().admin.username},
         {"csrf_token", session.csrf_token},
-        {"expires_at", session.expires_at}};
+        {"expires_at", session.expires_at},
+        {"must_change_password", service.must_change_admin_password()}};
 }
 
 esp_err_t handle_login(RequestContext& ctx) {
@@ -847,19 +813,83 @@ esp_err_t handle_leaderboard(RequestContext& ctx) {
 }
 
 esp_err_t handle_reports(RequestContext& ctx) {
-    static const std::set<std::string> kKinds = {
-        "overview", "consumption", "deposits", "expenses", "cashflow", "balances", "transactions"};
-    const std::string kind = ctx.params.get("kind").value_or("");
-    if (kKinds.count(kind) == 0) {
-        return send_error(ctx.req, 404, "not_found", "Unbekannter Bericht");
+    const std::string kind_name = ctx.params.get("kind").value_or("");
+    auto kind = reports::report_kind_from_name(kind_name);
+    if (!kind) return send_error(ctx.req, 404, "not_found", "Unbekannter Bericht");
+
+    const std::string query = req_query(ctx.req);
+    const std::string period_name = query_param(query, "period").value_or("month");
+    auto period_kind = reports::period_kind_from_name(period_name);
+    if (!period_kind) {
+        return send_error(ctx.req, 400, "invalid_input", "Unbekannter Zeitraum");
     }
-    // TODO(T-005): call kaffee::reports once components/reports lands. The
-    // report kinds, period handling (Europe/Berlin/DST) and the streaming CSV
-    // writer are owned by T-005. Until then the endpoint is explicit about it
-    // instead of returning misleading empty data.
-    ESP_LOGW(kTag, "reports/%s requested but the reports component is not linked yet",
-             kind.c_str());
-    return send_error(ctx.req, 501, "not_implemented", "Berichte sind noch nicht verfügbar");
+
+    reports::Period period;
+    if (*period_kind == reports::PeriodKind::Custom) {
+        auto from = query_int(query, "from");
+        auto to = query_int(query, "to");
+        if (!from || !to) {
+            return send_error(ctx.req, 400, "invalid_input",
+                              "from und to sind für einen eigenen Zeitraum erforderlich");
+        }
+        period = reports::custom(*from, *to);
+    } else {
+        const Timestamp now = ctx.server.platform().time_info().now;
+        if (*period_kind != reports::PeriodKind::All && now <= 0) {
+            return send_error(ctx.req, 409, "time_unset",
+                              "Gerätezeit ist nicht gesetzt; bitte zuerst synchronisieren");
+        }
+        period = reports::period(*period_kind, now);
+    }
+    if (!reports::valid(period)) {
+        return send_error(ctx.req, 400, "invalid_input", "Zeitraum ist ungültig");
+    }
+
+    const std::shared_ptr<const Ledger> ledger_snapshot = ctx.server.service().ledger_snapshot();
+    if (!ledger_snapshot) {
+        return send_error(ctx.req, 500, "internal_error", "Bericht konnte nicht erzeugt werden");
+    }
+    const Ledger& ledger = *ledger_snapshot;
+
+    std::string format = query_param(query, "format").value_or("");
+    if (format.empty()) {
+        const std::string accept = req_header(ctx.req, "Accept").value_or("");
+        format = accept.find("text/csv") != std::string::npos ? "csv_excel" : "json";
+    }
+
+    if (format == "json") {
+        nlohmann::json payload = reports::to_json(ledger, *kind, period);
+        const TimeInfo time = ctx.server.platform().time_info();
+        nlohmann::json quality{{"source", Ledger::time_source_name(time.source)}};
+        if (time.last_sync > 0) quality["last_sync"] = time.last_sync;
+        if (time.now > 0) quality["trusted"] = time.trusted;
+        payload["time_quality"] = std::move(quality);
+        return send_json(ctx.req, 200, payload);
+    }
+
+    reports::CsvFormat csv_format;
+    if (format == "csv_excel") {
+        csv_format = reports::CsvFormat::Excel;
+    } else if (format == "csv_raw") {
+        csv_format = reports::CsvFormat::Raw;
+    } else {
+        return send_error(ctx.req, 400, "invalid_input", "Unbekanntes Berichtsformat");
+    }
+
+    // Reports are small at kiosk scale; buffering one CSV is simpler than
+    // holding the service lock across chunked socket writes.
+    std::string body;
+    reports::Sink sink{[&body](std::string_view chunk) {
+        body.append(chunk.data(), chunk.size());
+        return true;
+    }};
+    auto written = reports::write_csv(ledger, *kind, period, csv_format, sink);
+    if (!written) {
+        return send_error(ctx.req, 500, "internal_error", "Bericht konnte nicht erzeugt werden");
+    }
+    const std::string disposition = content_disposition(reports::report_filename(*kind, period));
+    return send_chunked_text(ctx.req, 200, reports::csv_content_type(csv_format), body,
+                             disposition.c_str());
 }
 
 // --- Settings ------------------------------------------------------------
@@ -1034,7 +1064,9 @@ esp_err_t handle_ap_extend(RequestContext& ctx) {
 // --- System --------------------------------------------------------------
 
 esp_err_t handle_device(RequestContext& ctx) {
-    return send_json(ctx.req, 200, device_status_json(ctx.server.platform().stats()));
+    // Service stats add storage, last_backup_at and drinks_today on top of the
+    // platform diagnostics.
+    return send_json(ctx.req, 200, device_status_json(ctx.server.service().stats()));
 }
 
 esp_err_t handle_display_test(RequestContext& ctx) {
@@ -1071,6 +1103,17 @@ esp_err_t handle_restore(RequestContext& ctx) {
     }
     Result<Unit> restored = ctx.server.service().import_backup(*body.value, ctx.request_id);
     if (!restored) return send_service_error(ctx.req, result_error(restored));
+    return send_no_content(ctx.req);
+}
+
+esp_err_t handle_factory_reset(RequestContext& ctx) {
+    // Authenticated + CSRF + request id checked by the dispatcher. Erase in a
+    // helper task after the response so the connection is not cut mid-body.
+    if (!ctx.server.schedule_factory_reset()) {
+        return send_error(ctx.req, 500, "internal_error",
+                          "Werkseinstellungen konnten nicht gestartet werden");
+    }
+    ESP_LOGW(kTag, "factory reset requested from %s", client_ip(ctx.req).c_str());
     return send_no_content(ctx.req);
 }
 
@@ -1132,6 +1175,7 @@ const std::vector<RouteHandler>& route_handlers() {
         &handle_logs,
         &handle_backup,
         &handle_restore,
+        &handle_factory_reset,
         &handle_ota,
     };
     return kHandlers;

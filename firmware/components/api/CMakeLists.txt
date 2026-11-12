@@ -16,6 +16,6 @@ idf_component_register(
         "src/api_routes.cpp"
         "src/api_util.cpp"
     INCLUDE_DIRS "include"
-    REQUIRES service esp_http_server app_update ${webassets_requires}
+    REQUIRES service reports esp_http_server app_update ${webassets_requires}
     PRIV_REQUIRES esp_common esp_system log lwip
 )

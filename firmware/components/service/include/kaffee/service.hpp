@@ -69,6 +69,26 @@ class IPlatform {
     virtual Result<Unit> apply_display_settings(const DisplaySettings& settings) = 0;
     virtual Result<Unit> show_display_test() = 0;
 
+    // Settings are owned by the service. These hooks let the service apply the
+    // stored network/time settings without exposing read-only secrets through
+    // Settings::operator; device platforms override them. Defaults are no-ops
+    // so host fakes keep compiling. See ADR 0013.
+    virtual Result<Unit> apply_network_settings(const NetworkSettings& settings) {
+        (void)settings;
+        return Result<Unit>::ok(Unit{});
+    }
+    virtual Result<Unit> apply_time_settings(const TimeSettings& settings) {
+        (void)settings;
+        return Result<Unit>::ok(Unit{});
+    }
+
+    // Erase persistent network credentials (AP password, STA credentials and
+    // the restored wall clock) as part of a factory reset. Device platforms
+    // override this; the default reports that the feature is unavailable.
+    virtual Result<Unit> reset_network_credentials() {
+        return Result<Unit>::fail("unsupported", "network credential reset is not supported");
+    }
+
     // Called after a successful ledger mutation so the UI can refresh.
     virtual void notify_ledger_changed() = 0;
 
@@ -115,6 +135,10 @@ class IUiBackend {
     virtual Result<Unit> stop_ap() = 0;
     virtual Result<Unit> extend_ap(int seconds) = 0;
     virtual AppSettings app_settings() const = 0;
+    // First-run admin state. While must_change is true the device shows the
+    // persisted setup password so the admin can log in and change it.
+    virtual bool must_change_admin_password() const = 0;
+    virtual std::string setup_password() const = 0;
     // Device-side undo of the most recent member booking (actor "ui").
     virtual Result<Event> undo_booking(const std::string& event_id,
                                        const std::string& request_id) = 0;
@@ -193,6 +217,11 @@ class KaffeeService : public IUiBackend {
     virtual std::vector<Expense> expenses() const = 0;
     virtual std::vector<CashCount> cash_counts() const = 0;
 
+    // Read-only ledger snapshot for report generation (ADR 0013). The copy is
+    // taken under the service mutex, its commit hook is cleared and it is
+    // exposed through const so reports cannot mutate the live ledger.
+    virtual std::shared_ptr<const Ledger> ledger_snapshot() const = 0;
+
     // --- Auth (single admin) ---
     virtual Result<Session> login(const std::string& username, const std::string& password,
                                   const std::string& client_ip) = 0;
@@ -202,9 +231,9 @@ class KaffeeService : public IUiBackend {
     virtual Result<Unit> change_admin_password(const std::string& current_password,
                                                const std::string& new_password,
                                                const std::string& request_id) = 0;
-    virtual bool must_change_admin_password() const = 0;
+    virtual bool must_change_admin_password() const override = 0;
     // Plaintext initial password, available only until it has been changed.
-    virtual std::string setup_password() const = 0;
+    virtual std::string setup_password() const override = 0;
 
     // --- Settings / time / AP ---
     // Returns the effective settings for API/UI consumption. The implementation
@@ -222,6 +251,12 @@ class KaffeeService : public IUiBackend {
     // --- Backup ---
     virtual Result<std::string> export_backup() = 0;
     virtual Result<Unit> import_backup(const std::string& json, const std::string& request_id) = 0;
+
+    // Erase the event journal, snapshots and stored settings and return to the
+    // first-boot state. The caller must reset platform credentials and reboot;
+    // in-memory state is cleared but no new credentials are generated here so
+    // the next boot shows a fresh setup password (ADR 0013).
+    virtual Result<Unit> factory_reset() = 0;
 
     virtual void set_change_callback(ChangeCallback callback) = 0;
     virtual void refresh() = 0;

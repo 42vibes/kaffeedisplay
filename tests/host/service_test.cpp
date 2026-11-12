@@ -97,6 +97,21 @@ class FakePlatform : public IPlatform {
         ++display_tests;
         return Result<Unit>::ok(Unit{});
     }
+    Result<Unit> apply_network_settings(const NetworkSettings& settings) override {
+        network_settings = settings;
+        ++network_applies;
+        if (fail_network_apply) return Result<Unit>::fail("network", "forced apply failure");
+        return Result<Unit>::ok(Unit{});
+    }
+    Result<Unit> apply_time_settings(const TimeSettings& settings) override {
+        time_settings = settings;
+        ++time_applies;
+        return Result<Unit>::ok(Unit{});
+    }
+    Result<Unit> reset_network_credentials() override {
+        ++network_resets;
+        return Result<Unit>::ok(Unit{});
+    }
     void notify_ledger_changed() override {
         ++notifications;
     }
@@ -113,6 +128,8 @@ class FakePlatform : public IPlatform {
     NetworkStatus network;
     DisplaySettings display;
     SystemStats stats_;
+    NetworkSettings network_settings;
+    TimeSettings time_settings;
     std::function<void()> ap_stopped_callback;
     uint64_t rng = 0x123456789abcdef0ull;
     Timestamp synced_epoch = 0;
@@ -121,6 +138,10 @@ class FakePlatform : public IPlatform {
     int last_extend = 0;
     int display_tests = 0;
     int notifications = 0;
+    int network_applies = 0;
+    int time_applies = 0;
+    int network_resets = 0;
+    bool fail_network_apply = false;
 };
 
 class FailingSettingsStore final : public ISettingsStore {
@@ -135,6 +156,15 @@ class FailingSettingsStore final : public ISettingsStore {
     }
     Result<Unit> reset() override {
         return inner.reset();
+    }
+    Result<std::string> load_setup_password() override {
+        return inner.load_setup_password();
+    }
+    Result<Unit> save_setup_password(const std::string& password) override {
+        return inner.save_setup_password(password);
+    }
+    Result<Unit> clear_setup_password() override {
+        return inner.clear_setup_password();
     }
 
     const Settings& stored() const {
@@ -178,6 +208,7 @@ struct ServiceFixture {
                 pbkdf2_sha256_hex(kPassword, settings.admin.salt, settings.admin.iterations);
             settings.network.ap_password = "ap-secret";
             REQUIRE(static_cast<bool>(settings_store.save(settings)));
+            REQUIRE(static_cast<bool>(settings_store.save_setup_password(kPassword)));
         }
         auto created = KaffeeService::create(store, settings_store, platform);
         REQUIRE(static_cast<bool>(created));
@@ -213,6 +244,89 @@ TEST_CASE("first boot generates a setup password") {
     CHECK(session.value->token.size() == 32);
     CHECK(session.value->csrf_token.size() == 32);
     CHECK(session.value->token != session.value->csrf_token);
+}
+
+TEST_CASE("setup password survives a service reload") {
+    ServiceFixture fixture;
+    const std::string initial = fixture.service->setup_password();
+    REQUIRE(initial.size() == 16);
+    CHECK(fixture.settings_store.stored_setup_password() == initial);
+
+    fixture.service.reset();
+    auto created = KaffeeService::create(fixture.store, fixture.settings_store, fixture.platform);
+    REQUIRE(static_cast<bool>(created));
+    fixture.service = std::move(*created.value);
+    CHECK(fixture.service->must_change_admin_password());
+    CHECK(fixture.service->setup_password() == initial);
+    CHECK(static_cast<bool>(fixture.service->login("admin", initial, "10.0.0.9")));
+}
+
+TEST_CASE("changing the admin password clears the persisted setup password") {
+    ServiceFixture fixture(true);
+    REQUIRE(fixture.service->setup_password() == kPassword);
+    REQUIRE(static_cast<bool>(
+        fixture.service->change_admin_password(kPassword, "changed-password-1", "setup-1")));
+    CHECK_FALSE(fixture.service->must_change_admin_password());
+    CHECK(fixture.service->setup_password().empty());
+    CHECK(fixture.settings_store.stored_setup_password().empty());
+
+    fixture.service.reset();
+    auto created = KaffeeService::create(fixture.store, fixture.settings_store, fixture.platform);
+    REQUIRE(static_cast<bool>(created));
+    fixture.service = std::move(*created.value);
+    CHECK_FALSE(fixture.service->must_change_admin_password());
+    CHECK(fixture.service->setup_password().empty());
+    CHECK_FALSE(static_cast<bool>(fixture.service->login("admin", kPassword, "10.0.0.10")));
+    CHECK(static_cast<bool>(fixture.service->login("admin", "changed-password-1", "10.0.0.11")));
+}
+
+TEST_CASE("upgrade without a stored setup password rotates admin credentials") {
+    TempDir dir;
+    FileEventStore store((dir.path / "events").string());
+    MemorySettingsStore settings_store;
+    FakePlatform platform;
+    configure_platform(platform);
+
+    Settings seeded;
+    seeded.admin.username = "admin";
+    seeded.admin.salt = "00112233445566778899aabbccddeeff";
+    seeded.admin.iterations = 1000;
+    seeded.admin.password_hash =
+        pbkdf2_sha256_hex(kPassword, seeded.admin.salt, seeded.admin.iterations);
+    REQUIRE(static_cast<bool>(settings_store.save(seeded)));
+
+    auto created = KaffeeService::create(store, settings_store, platform);
+    REQUIRE(static_cast<bool>(created));
+    auto service = std::move(*created.value);
+    CHECK(service->must_change_admin_password());
+    CHECK(service->setup_password().size() == 16);
+    CHECK_FALSE(static_cast<bool>(service->login("admin", kPassword, "10.0.0.12")));
+    CHECK(static_cast<bool>(service->login("admin", service->setup_password(), "10.0.0.13")));
+}
+
+TEST_CASE("login upgrades old PBKDF2 iteration counts") {
+    TempDir dir;
+    FileEventStore store((dir.path / "events").string());
+    MemorySettingsStore settings_store;
+    FakePlatform platform;
+    configure_platform(platform);
+
+    Settings seeded;
+    seeded.admin.username = "admin";
+    seeded.admin.salt = "00112233445566778899aabbccddeeff";
+    seeded.admin.iterations = 1000;
+    seeded.admin.password_hash =
+        pbkdf2_sha256_hex(kPassword, seeded.admin.salt, seeded.admin.iterations);
+    REQUIRE(static_cast<bool>(settings_store.save(seeded)));
+    REQUIRE(static_cast<bool>(settings_store.save_setup_password(kPassword)));
+
+    auto created = KaffeeService::create(store, settings_store, platform);
+    REQUIRE(static_cast<bool>(created));
+    auto service = std::move(*created.value);
+    CHECK(settings_store.stored().admin.iterations == 1000);
+    REQUIRE(static_cast<bool>(service->login("admin", kPassword, "10.0.0.14")));
+    CHECK(settings_store.stored().admin.iterations == 10000);
+    CHECK(static_cast<bool>(service->login("admin", kPassword, "10.0.0.15")));
 }
 
 TEST_CASE("sessions, csrf and monotonic expiry") {
@@ -523,6 +637,10 @@ TEST_CASE("backup excludes secrets and restores state") {
     REQUIRE(static_cast<bool>(backup));
     CHECK(backup.value->find("ap-secret") == std::string::npos);
     CHECK(backup.value->find("password_hash") == std::string::npos);
+    const std::string setup_password = fixture.service->setup_password();
+    REQUIRE_FALSE(setup_password.empty());
+    CHECK(backup.value->find(setup_password) == std::string::npos);
+    CHECK(backup.value->find("setup_password") == std::string::npos);
 
     const auto parsed = nlohmann::json::parse(*backup.value);
     CHECK(parsed["format"] == "kaffeekasse-backup");
@@ -661,6 +779,92 @@ TEST_CASE("accessor snapshots are stable copies") {
     stop = true;
     reader.join();
     CHECK(fixture.service->users().size() == 51);
+}
+
+TEST_CASE("ledger snapshot is a stable report view") {
+    ServiceFixture fixture(true);
+    const std::string user_id = fixture.user("Ada");
+    const std::string product_id = fixture.product("Kaffee", 60);
+    REQUIRE(static_cast<bool>(fixture.service->purchase(user_id, product_id, "snap-buy")));
+
+    const std::shared_ptr<const Ledger> snapshot = fixture.service->ledger_snapshot();
+    REQUIRE(snapshot != nullptr);
+    const size_t snapshot_events = snapshot->events().size();
+    CHECK(snapshot->users().size() == 1);
+    CHECK(snapshot->balance(user_id) == -60);
+
+    fixture.user("Ben");
+    CHECK(snapshot->events().size() == snapshot_events);
+    CHECK(fixture.service->ledger_snapshot()->events().size() == snapshot_events + 1);
+}
+
+TEST_CASE("settings save applies network and time to the platform") {
+    ServiceFixture fixture(true);
+    Settings next = fixture.service->settings();
+    next.network.ap_ssid = "Kaffeekasse-Test";
+    next.network.hostname = "kaffee-test";
+    next.time.timezone = "Europe/Berlin";
+    next.time.sntp_enabled = false;
+
+    REQUIRE(static_cast<bool>(fixture.service->save_settings(next, "settings-net")));
+    CHECK(fixture.platform.network_applies == 1);
+    CHECK(fixture.platform.time_applies == 1);
+    CHECK(fixture.platform.network_settings.ap_ssid == "Kaffeekasse-Test");
+    CHECK(fixture.platform.network_settings.hostname == "kaffee-test");
+    CHECK_FALSE(fixture.platform.network_settings.ap_password.empty());
+    CHECK(fixture.platform.time_settings.timezone == "Europe/Berlin");
+}
+
+TEST_CASE("failed network apply rolls back settings") {
+    ServiceFixture fixture(true);
+    const Settings before = fixture.service->settings();
+    Settings next = before;
+    next.network.ap_ssid = "Kaffeekasse-Should-Not-Persist";
+    fixture.platform.fail_network_apply = true;
+
+    auto saved = fixture.service->save_settings(next, "settings-rollback");
+    REQUIRE_FALSE(static_cast<bool>(saved));
+    CHECK(fixture.service->settings().network.ap_ssid == before.network.ap_ssid);
+    CHECK(fixture.settings_store.stored().network.ap_ssid == before.network.ap_ssid);
+    CHECK(fixture.platform.network_settings.ap_ssid == before.network.ap_ssid);
+}
+
+TEST_CASE("service stats include storage, backup and drinks") {
+    ServiceFixture fixture(true);
+    const std::string user_id = fixture.user("Ada");
+    const std::string product_id = fixture.product("Kaffee", 50);
+    REQUIRE(static_cast<bool>(fixture.service->purchase(user_id, product_id, "stats-1")));
+    REQUIRE(static_cast<bool>(fixture.service->purchase(user_id, product_id, "stats-2")));
+
+    const SystemStats before = fixture.service->stats();
+    CHECK(before.storage.mounted);
+    CHECK(before.storage.total_bytes > 0);
+    CHECK(before.drinks_today == 2);
+    CHECK(before.last_backup_at == 0);
+
+    REQUIRE(static_cast<bool>(fixture.service->export_backup()));
+    const SystemStats after = fixture.service->stats();
+    CHECK(after.last_backup_at == kNow);
+    CHECK(after.storage.used_bytes > 0);
+    CHECK(after.drinks_today == 2);
+}
+
+TEST_CASE("factory reset clears storage, settings and sessions") {
+    ServiceFixture fixture(true);
+    fixture.user("Ada");
+    fixture.product("Kaffee", 60);
+    auto session = fixture.service->login("admin", kPassword, "10.0.10.1");
+    REQUIRE(static_cast<bool>(session));
+
+    REQUIRE(static_cast<bool>(fixture.service->factory_reset()));
+    CHECK(fixture.service->users().empty());
+    CHECK(fixture.service->events().empty());
+    CHECK(fixture.service->summary().cash_expected == 0);
+    CHECK_FALSE(static_cast<bool>(fixture.service->validate_session(session.value->token)));
+    CHECK(fixture.service->must_change_admin_password());
+    CHECK(fixture.service->settings().network.ap_ssid.empty());
+    CHECK(fixture.settings_store.stored().admin.password_hash.empty());
+    CHECK(fixture.store.info().event_count == 0);
 }
 
 TEST_CASE("journal compaction is scheduled by the event threshold") {

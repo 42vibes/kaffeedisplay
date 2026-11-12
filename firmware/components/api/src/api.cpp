@@ -18,9 +18,10 @@ namespace {
 
 constexpr const char* kTag = "kaffee.api";
 
-// Response helper for the request id echo. The HTTP server task handles one
-// request at a time, but thread_local keeps this correct if that ever changes.
-thread_local std::string t_response_request_id;
+// Response helper for the request id echo. esp_http_server handles one request
+// at a time per server, so a plain string is sufficient and avoids a
+// thread_local object with a global constructor on the device.
+std::string t_response_request_id;
 
 httpd_method_t to_httpd_method(RouteMethod method) {
     switch (method) {
@@ -176,6 +177,25 @@ void reboot_task(void* arg) {
     esp_restart();
 }
 
+void factory_reset_task(void* arg) {
+    auto* self = static_cast<ApiServerImpl*>(arg);
+    // Let the 204 response flush before the AP/HTTP server goes away.
+    vTaskDelay(pdMS_TO_TICKS(300));
+
+    auto storage = self->service().factory_reset();
+    if (!storage) {
+        ESP_LOGE(kTag, "factory reset: storage/settings reset failed: %s",
+                 storage.error ? storage.error->message.c_str() : "unknown");
+    }
+    auto network = self->platform().reset_network_credentials();
+    if (!network) {
+        ESP_LOGE(kTag, "factory reset: network credential reset failed: %s",
+                 network.error ? network.error->message.c_str() : "unknown");
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+    esp_restart();
+}
+
 }  // namespace
 
 // --- Lifecycle -----------------------------------------------------------
@@ -274,6 +294,10 @@ bool ApiServerImpl::running() const {
 
 void ApiServerImpl::schedule_reboot(uint32_t delay_ms) {
     xTaskCreate(&reboot_task, "api_reboot", 2048, reinterpret_cast<void*>(delay_ms), 5, nullptr);
+}
+
+bool ApiServerImpl::schedule_factory_reset() {
+    return xTaskCreate(&factory_reset_task, "api_factory_reset", 4096, this, 5, nullptr) == pdPASS;
 }
 
 // --- Responses -----------------------------------------------------------
@@ -471,14 +495,33 @@ Result<nlohmann::json> read_json_object(httpd_req_t* req, size_t limit) {
 
 void set_session_cookie(httpd_req_t* req, std::string_view token, Timestamp expires_at,
                         Timestamp now) {
-    int64_t max_age = expires_at - now;
+    constexpr int64_t kFallbackMaxAge = 30 * 60;
+    int64_t max_age = kFallbackMaxAge;
+    if (expires_at > 0 && now > 0 && expires_at > now) max_age = expires_at - now;
     if (max_age < 60) max_age = 60;
     if (max_age > 8 * 3600) max_age = 8 * 3600;
-    char cookie[256];
-    std::snprintf(cookie, sizeof(cookie),
-                  "kaffee_session=%.*s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%lld",
-                  static_cast<int>(token.size()), token.data(), static_cast<long long>(max_age));
+
+    if (token.empty()) {
+        ESP_LOGE(kTag, "refusing to set an empty session cookie");
+        return;
+    }
+
+    // httpd_resp_set_hdr() stores the value pointer, it does not copy it. The
+    // buffer must stay valid until httpd sends the response, so it cannot be a
+    // local. esp_http_server handles one request at a time per server.
+    static char cookie[320];
+    const int length = std::snprintf(
+        cookie, sizeof(cookie),
+        "kaffee_session=%.*s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%lld",
+        static_cast<int>(token.size()), token.data(), static_cast<long long>(max_age));
+    if (length <= 0 || static_cast<size_t>(length) >= sizeof(cookie)) {
+        ESP_LOGE(kTag, "session cookie buffer too small (token_len=%u)",
+                 static_cast<unsigned>(token.size()));
+        return;
+    }
     httpd_resp_set_hdr(req, "Set-Cookie", cookie);
+    ESP_LOGI(kTag, "session cookie set: token_len=%u header_len=%d",
+             static_cast<unsigned>(token.size()), length);
 }
 
 void clear_session_cookie(httpd_req_t* req) {
@@ -495,10 +538,10 @@ constexpr size_t kLogLineLength = 160;
 
 struct LogRing {
     char lines[kLogLines][kLogLineLength];
-    size_t next = 0;
-    size_t count = 0;
-    bool installed = false;
-    vprintf_like_t previous = nullptr;
+    size_t next;
+    size_t count;
+    bool installed;
+    vprintf_like_t previous;
 };
 
 LogRing g_log_ring;

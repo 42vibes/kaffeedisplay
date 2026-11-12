@@ -24,7 +24,9 @@
 }
 ```
 
-- `from` is inclusive, `to` is exclusive, both Unix seconds.
+- `from` is inclusive, `to` is exclusive, both Unix seconds. For `period=all`
+  the envelope omits both fields because the range is unbounded (never emit
+  `INT64_MAX`, which overflows JavaScript `Date`).
 - Period boundaries are calculated by the device in `Europe/Berlin`
   (ISO week Mo–So). For `period=custom`, the SPA sends Berlin-midnight
   boundaries as `from`/`to`; `to` is the midnight after the selected end date.
@@ -85,3 +87,14 @@ in `Europe/Berlin`.
 
 `web/mock/server.mjs` implements this shape for all seven report kinds so the
 SPA and Playwright flows stay deterministic.
+
+## Implementation
+
+The device implements this shape in `kaffee::reports::to_json()`: every report
+kind returns its `kaffee::reports::columns()` table (stable keys such as
+`amount_cents`, `timestamp`, `balance_cents`) and one row per aggregate/event.
+Both EUR and cent money columns carry integer cents; the SPA renders either as
+EUR. `time_quality` is added by the API from the platform clock. Standard
+periods return `409 time_unset` while the device clock is unset; `period=custom`
+with `from`/`to` still works because the caller supplies both bounds.
+

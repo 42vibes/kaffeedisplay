@@ -3,6 +3,15 @@ const euro = new Intl.NumberFormat("de-DE", {
   currency: "EUR",
 });
 
+// JavaScript Date supports +/-8.64e12 seconds around the epoch. API payloads
+// may contain sentinel bounds such as INT64_MAX (all-time reports), which would
+// throw a RangeError inside Intl.format().
+const MAX_UNIX_SECONDS = 8_640_000_000_000;
+
+function validUnixSeconds(seconds: number): boolean {
+  return Number.isFinite(seconds) && Math.abs(seconds) <= MAX_UNIX_SECONDS;
+}
+
 const decimal = new Intl.NumberFormat("de-DE", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -37,6 +46,7 @@ export function formatPercent(value: number, digits = 0): string {
 }
 
 export function formatDate(seconds: number): string {
+  if (!validUnixSeconds(seconds)) return "–";
   return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
     month: "2-digit",
@@ -45,6 +55,7 @@ export function formatDate(seconds: number): string {
 }
 
 export function formatDateInZone(seconds: number, timeZone = "Europe/Berlin"): string {
+  if (!validUnixSeconds(seconds)) return "–";
   return new Intl.DateTimeFormat("de-DE", {
     timeZone,
     day: "2-digit",
@@ -54,7 +65,7 @@ export function formatDateInZone(seconds: number, timeZone = "Europe/Berlin"): s
 }
 
 export function formatDateTimeInZone(seconds: number, timeZone = "Europe/Berlin"): string {
-  if (!seconds) return "–";
+  if (!seconds || !validUnixSeconds(seconds)) return "–";
   return new Intl.DateTimeFormat("de-DE", {
     timeZone,
     day: "2-digit",
@@ -66,6 +77,7 @@ export function formatDateTimeInZone(seconds: number, timeZone = "Europe/Berlin"
 }
 
 export function formatDateShort(seconds: number): string {
+  if (!validUnixSeconds(seconds)) return "–";
   return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
     month: "2-digit",
@@ -73,7 +85,7 @@ export function formatDateShort(seconds: number): string {
 }
 
 export function formatDateTime(seconds: number): string {
-  if (!seconds) return "–";
+  if (!seconds || !validUnixSeconds(seconds)) return "–";
   return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
     month: "2-digit",

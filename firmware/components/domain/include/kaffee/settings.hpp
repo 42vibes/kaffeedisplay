@@ -44,7 +44,7 @@ struct AdminCredentials {
     std::string username = "admin";
     std::string password_hash;  // PBKDF2-HMAC-SHA256, hex
     std::string salt;           // 16 random bytes, hex
-    uint32_t iterations = 50000;
+    uint32_t iterations = 10000;
 };
 
 struct Settings {

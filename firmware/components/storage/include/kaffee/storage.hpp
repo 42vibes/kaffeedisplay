@@ -42,6 +42,21 @@ class ISettingsStore {
     virtual Result<Settings> load() = 0;
     virtual Result<Unit> save(const Settings& settings) = 0;
     virtual Result<Unit> reset() = 0;
+
+    // Initial admin password shown on the device until the admin changes it.
+    // It is stored separately from Settings so backups and the event journal
+    // never contain it. Defaults keep host fakes and older stores source
+    // compatible; real stores persist it.
+    virtual Result<std::string> load_setup_password() {
+        return Result<std::string>::ok(std::string());
+    }
+    virtual Result<Unit> save_setup_password(const std::string& password) {
+        (void)password;
+        return Result<Unit>::ok(Unit{});
+    }
+    virtual Result<Unit> clear_setup_password() {
+        return Result<Unit>::ok(Unit{});
+    }
 };
 
 }  // namespace kaffee

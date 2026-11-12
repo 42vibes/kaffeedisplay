@@ -1084,6 +1084,88 @@ Result<Unit> write_csv(const Ledger& ledger, ReportKind kind, const Period& p, C
 }
 
 // ---------------------------------------------------------------------------
+// JSON envelope
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const char* column_type_name(ColumnType type) {
+    switch (type) {
+        case ColumnType::MoneyEur:
+        case ColumnType::MoneyCents:
+            return "money";
+        case ColumnType::Date:
+            return "date";
+        case ColumnType::DateTime:
+            return "datetime";
+        case ColumnType::Integer:
+            return "number";
+        case ColumnType::Bool:
+            return "boolean";
+        case ColumnType::Text:
+            break;
+    }
+    return "text";
+}
+
+nlohmann::json value_json(ColumnType type, const Value& value) {
+    switch (type) {
+        case ColumnType::MoneyEur:
+        case ColumnType::MoneyCents:
+            return value.cents;
+        case ColumnType::Date:
+        case ColumnType::DateTime:
+            return value.ts;
+        case ColumnType::Integer:
+            return value.number;
+        case ColumnType::Bool:
+            return value.flag;
+        case ColumnType::Text:
+            break;
+    }
+    return value.text;
+}
+
+}  // namespace
+
+nlohmann::json to_json(const Ledger& ledger, ReportKind kind, const Period& p) {
+    nlohmann::json out{{"kind", report_kind_name(kind)}, {"period", period_kind_name(p.kind)}};
+    // All-time reports have no meaningful boundaries. The SPA treats missing
+    // from/to as "all time"; INT64_MAX would overflow JavaScript Date.
+    if (p.kind != PeriodKind::All) {
+        out["from"] = p.from;
+        out["to"] = p.to;
+    }
+
+    const std::vector<Column>& table = columns(kind);
+    nlohmann::json column_json = nlohmann::json::array();
+    for (const Column& column : table) {
+        column_json.push_back({{"key", std::string(column.key)},
+                               {"label", std::string(column.label)},
+                               {"type", column_type_name(column.type)}});
+    }
+    out["columns"] = std::move(column_json);
+
+    nlohmann::json rows = nlohmann::json::array();
+    auto result = for_each_row(ledger, kind, p, [&](const std::vector<Value>& values) {
+        nlohmann::json row = nlohmann::json::object();
+        const size_t count = std::min(table.size(), values.size());
+        for (size_t i = 0; i < count; ++i) {
+            row[std::string(table[i].key)] = value_json(table[i].type, values[i]);
+        }
+        rows.push_back(std::move(row));
+        return true;
+    });
+    if (!result) {
+        // The sink never aborts and the period is validated by the caller; keep
+        // the envelope shape even if a future report returns an error.
+        rows = nlohmann::json::array();
+    }
+    out["rows"] = std::move(rows);
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // Names, content type and filename
 // ---------------------------------------------------------------------------
 

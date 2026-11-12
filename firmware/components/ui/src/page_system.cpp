@@ -95,6 +95,7 @@ void UiAppImpl::refresh_system_page() {
     set_stay_awake(network.ap_active);
     TimeInfo time = backend_.time_info();
     DisplaySettings display = backend_.display_settings();
+    const bool must_change = backend_.must_change_admin_password();
     bool display_changed = display.rotation != last_display_.rotation ||
                            display.brightness_active != last_display_.brightness_active ||
                            display.brightness_idle != last_display_.brightness_idle ||
@@ -102,11 +103,12 @@ void UiAppImpl::refresh_system_page() {
                            display.screen_off_timeout_s != last_display_.screen_off_timeout_s;
     if (wlan_status_label_ == nullptr || network.ap_active != last_ap_active_ ||
         network.sta_connected != last_sta_connected_ || time.trusted != last_time_trusted_ ||
-        display_changed) {
+        must_change != last_must_change_ || display_changed) {
         last_ap_active_ = network.ap_active;
         last_sta_connected_ = network.sta_connected;
         last_time_trusted_ = time.trusted;
         last_display_ = display;
+        last_must_change_ = must_change;
         build_system_body();
     }
     update_system_dynamic();
@@ -130,6 +132,39 @@ void UiAppImpl::build_system_body() {
     TimeInfo time = backend_.time_info();
     SystemStats stats = backend_.stats();
     DisplaySettings display = backend_.display_settings();
+
+    // --- First setup (initial admin password) -----------------------------
+    if (backend_.must_change_admin_password()) {
+        lv_obj_t* setup = theme::make_card(system_body_);
+        lv_obj_set_width(setup, lv_pct(100));
+        lv_obj_set_height(setup, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(setup, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_row(setup, 4, 0);
+
+        theme::make_label(setup, strings::SYSTEM_SETUP_TITLE, theme::font_title_bold(),
+                          theme::color(theme::COLOR_ACCENT));
+        lv_obj_t* hint = theme::make_label(setup, strings::SYSTEM_SETUP_HINT, theme::font_small(),
+                                           theme::color(theme::COLOR_MUTED));
+        theme::set_wrapped(hint);
+
+        const std::string setup_password = backend_.setup_password();
+        if (!setup_password.empty()) {
+            make_info_row(setup, strings::SYSTEM_SETUP_PASSWORD, setup_password, nullptr,
+                          theme::color(theme::COLOR_ACCENT));
+        }
+        if (!network.ap_ssid.empty()) {
+            make_info_row(setup, strings::SYSTEM_SETUP_SSID, network.ap_ssid);
+        }
+        const std::string url =
+            "http://" + (network.ap_ip.empty() ? std::string("192.168.4.1") : network.ap_ip) + "/";
+        make_info_row(setup, strings::SYSTEM_SETUP_URL, url);
+        if (!network.ap_active) {
+            lv_obj_t* start_hint =
+                theme::make_label(setup, strings::SYSTEM_SETUP_AP_HINT, theme::font_small(),
+                                  theme::color(theme::COLOR_MUTED));
+            theme::set_wrapped(start_hint);
+        }
+    }
 
     // --- WLAN -------------------------------------------------------------
     lv_obj_t* wlan = theme::make_card(system_body_);

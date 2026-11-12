@@ -894,6 +894,7 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, {
       username: "admin",
       expires_at: now + 3600,
+      must_change_password: false,
     });
   }
 
@@ -905,6 +906,7 @@ const server = http.createServer(async (req, res) => {
       username: "admin",
       expires_at: now + 3600,
       csrf_token: CSRF_TOKEN,
+      must_change_password: false,
     });
   }
 

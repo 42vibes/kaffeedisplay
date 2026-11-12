@@ -13,6 +13,8 @@ export const de = {
   wrongPassword: "Passwort falsch.",
   sessionExpired: "Sitzung abgelaufen. Bitte erneut anmelden.",
   loginHint: "Nur der Admin-Account meldet sich an. Buchungen am Gerät sind vertrauensbasiert.",
+  loginSetupHint:
+    "Erste Einrichtung? Das Admin-Passwort steht auf Seite 3 (System) des Geräts.",
 
   // navigation
   dashboard: "Übersicht",
@@ -393,6 +395,12 @@ export const de = {
   passwordMismatch: "Die Passwörter stimmen nicht überein.",
   passwordTooShort: "Das neue Passwort muss mindestens 10 Zeichen haben.",
   passwordHint: "Mindestens 10 Zeichen. Das Gerät speichert nur einen Hash.",
+  firstLoginTitle: "Erste Einrichtung",
+  firstLoginBody:
+    "Bitte das Admin-Passwort von Seite 3 (System) des Geräts eingeben und ein neues Passwort festlegen.",
+  firstLoginCurrent: "Aktuelles Passwort (vom Gerät)",
+  firstLoginSubmit: "Passwort festlegen",
+  firstLoginFailed: "Passwort konnte nicht geändert werden.",
   invalidSettings: "Einstellungen konnten nicht gespeichert werden.",
 
   // system

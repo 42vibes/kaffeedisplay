@@ -117,6 +117,46 @@ Result<Unit> JsonFileSettingsStore::reset() {
     std::error_code ec;
     std::filesystem::remove(path_, ec);
     if (ec) return fs_fail("remove settings file", ec);
+    std::filesystem::remove(path_ + ".setup-password", ec);
+    if (ec) return fs_fail("remove setup password file", ec);
+    return Result<Unit>::ok(Unit{});
+}
+
+Result<std::string> JsonFileSettingsStore::load_setup_password() {
+    const std::string setup_path = path_ + ".setup-password";
+    std::ifstream in(setup_path, std::ios::binary);
+    if (!in) {
+        if (!std::filesystem::exists(setup_path)) return Result<std::string>::ok(std::string());
+        return Result<std::string>::fail("settings", "cannot read setup password file");
+    }
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+    return Result<std::string>::ok(std::move(text));
+}
+
+Result<Unit> JsonFileSettingsStore::save_setup_password(const std::string& password) {
+    if (password.empty()) return clear_setup_password();
+    const std::string setup_path = path_ + ".setup-password";
+    const std::string tmp = setup_path + ".tmp";
+    if (!write_and_sync(tmp, password)) {
+        std::remove(tmp.c_str());
+        return Result<Unit>::fail("settings", "cannot write setup password file");
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, setup_path, ec);
+    if (ec) {
+        std::remove(tmp.c_str());
+        return fs_fail("rename setup password file", ec);
+    }
+    const auto parent = std::filesystem::path(path_).parent_path();
+    if (!parent.empty()) fsync_directory(parent.string());
+    return Result<Unit>::ok(Unit{});
+}
+
+Result<Unit> JsonFileSettingsStore::clear_setup_password() {
+    std::error_code ec;
+    std::filesystem::remove(path_ + ".setup-password", ec);
+    if (ec) return fs_fail("remove setup password file", ec);
     return Result<Unit>::ok(Unit{});
 }
 
@@ -133,6 +173,21 @@ Result<Unit> MemorySettingsStore::save(const Settings& settings) {
 
 Result<Unit> MemorySettingsStore::reset() {
     settings_ = Settings{};
+    setup_password_.clear();
+    return Result<Unit>::ok(Unit{});
+}
+
+Result<std::string> MemorySettingsStore::load_setup_password() {
+    return Result<std::string>::ok(setup_password_);
+}
+
+Result<Unit> MemorySettingsStore::save_setup_password(const std::string& password) {
+    setup_password_ = password;
+    return Result<Unit>::ok(Unit{});
+}
+
+Result<Unit> MemorySettingsStore::clear_setup_password() {
+    setup_password_.clear();
     return Result<Unit>::ok(Unit{});
 }
 

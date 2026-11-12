@@ -637,14 +637,16 @@ struct NetworkManager::Impl {
         config.sta.pmf_cfg.capable = true;
         config.sta.pmf_cfg.required = false;
 
-        esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &config);
-        if (err != ESP_OK) {
-            return Result<Unit>::fail("sta_config", esp_err_to_name(err));
-        }
+        // The mode must be set before esp_wifi_set_config(); otherwise the
+        // driver returns ESP_ERR_WIFI_MODE on a cold boot.
         const wifi_mode_t mode = (ap_desired || ap_active) ? WIFI_MODE_APSTA : WIFI_MODE_STA;
-        err = esp_wifi_set_mode(mode);
+        esp_err_t err = esp_wifi_set_mode(mode);
         if (err != ESP_OK && err != ESP_ERR_WIFI_STATE) {
             return Result<Unit>::fail("sta_mode", esp_err_to_name(err));
+        }
+        err = esp_wifi_set_config(WIFI_IF_STA, &config);
+        if (err != ESP_OK) {
+            return Result<Unit>::fail("sta_config", esp_err_to_name(err));
         }
         auto started = ensure_wifi_started_locked();
         if (!started) {
@@ -1236,23 +1238,30 @@ Result<Unit> NetworkManager::start_ap() {
             if (impl_->ap_ssid.empty() || impl_->ap_password.size() < 8) {
                 impl_->load_or_create_ap_credentials_locked();
             }
+            // Set the interface mode first: esp_wifi_set_config() rejects a
+            // configuration while the driver is still in WIFI_MODE_NULL.
+            const wifi_mode_t mode = impl_->sta_ready_locked() ? WIFI_MODE_APSTA : WIFI_MODE_AP;
+            esp_err_t err = esp_wifi_set_mode(mode);
+            if (err != ESP_OK && err != ESP_ERR_WIFI_STATE) {
+                return Result<Unit>::fail("ap_mode", esp_err_to_name(err));
+            }
             auto configured = impl_->configure_ap_locked();
             if (!configured) {
+                if (impl_->sta_ready_locked()) {
+                    esp_wifi_set_mode(WIFI_MODE_STA);
+                } else {
+                    esp_wifi_set_mode(WIFI_MODE_NULL);
+                    if (impl_->wifi_started) {
+                        esp_wifi_stop();
+                        impl_->wifi_started = false;
+                    }
+                }
                 return configured;
             }
             ++impl_->ap_intent_generation;
             impl_->ap_start_generation = impl_->ap_intent_generation;
             impl_->ap_desired = true;
             impl_->ap_timer.start(uptime_now(), impl_->settings.network.ap_window_s);
-            const wifi_mode_t mode = impl_->sta_ready_locked() ? WIFI_MODE_APSTA : WIFI_MODE_AP;
-            esp_err_t err = esp_wifi_set_mode(mode);
-            if (err != ESP_OK && err != ESP_ERR_WIFI_STATE) {
-                impl_->ap_desired = false;
-                impl_->ap_timer.stop();
-                impl_->ap_stop_pending.store(true);
-                impl_->request_state_notification();
-                return Result<Unit>::fail("ap_mode", esp_err_to_name(err));
-            }
             auto started = impl_->ensure_wifi_started_locked();
             if (!started) {
                 impl_->ap_desired = false;

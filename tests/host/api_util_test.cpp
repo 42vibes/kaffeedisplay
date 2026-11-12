@@ -199,6 +199,36 @@ TEST_CASE("misc helpers") {
     CHECK_FALSE(parse_bool_text("vielleicht", flag));
 }
 
+TEST_CASE("device status payload includes service-owned statistics") {
+    SystemStats stats;
+    stats.uptime_s = 42;
+    stats.storage.used_bytes = 12345;
+    stats.storage.total_bytes = 9 * 1024 * 1024;
+    stats.storage.mounted = true;
+    stats.storage.degraded = false;
+    stats.last_backup_at = 1'794'477'000;
+    stats.drinks_today = 7;
+    stats.network.ap_active = true;
+    stats.network.ap_ssid = "Kaffeekasse-ABCD";
+    stats.network.ap_ip = "192.168.4.1";
+    stats.time.now = 1'794'477'600;
+    stats.time.source = TimeSource::Synced;
+    stats.time.last_source = "browser";
+    stats.time.trusted = true;
+
+    const auto payload = device_status_json(stats);
+    CHECK(payload["storage_used"] == 12345);
+    CHECK(payload["storage_total"] == 9 * 1024 * 1024);
+    CHECK(payload["storage_mounted"] == true);
+    CHECK(payload["storage_degraded"] == false);
+    CHECK(payload["last_backup_at"] == 1'794'477'000);
+    CHECK(payload["drinks_today"] == 7);
+    CHECK(payload["network"]["ap_active"] == true);
+    CHECK(payload["network"]["ap_ssid"] == "Kaffeekasse-ABCD");
+    CHECK(payload["time"]["source"] == "synced");
+    CHECK(payload["time"]["trusted"] == true);
+}
+
 TEST_CASE("streaming SHA-256 matches the one-shot helper") {
     std::string data;
     data.reserve(5000);
