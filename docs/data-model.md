@@ -11,7 +11,9 @@ Money is `int64_t` cents. Timestamps are Unix seconds UTC. The UI renders in
 id, name, color, avatar_id, active, created_at, archived_at
 ```
 
-`avatar_id` is 0 for initials-only, or 1–30 for fixed firmware presets; it is stored in user change events and included in backups. Missing legacy values default to 0.\n\nBalances are derived from events. Archived users keep their history and debt.
+`avatar_id` is 0 for initials-only, or 1–30 for fixed firmware presets; it is stored in user change events and included in backups. Missing legacy values default to 0.
+
+Balances are derived from events. Archived users keep their history and debt.
 
 ### Product (drink / offering)
 
