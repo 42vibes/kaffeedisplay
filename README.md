@@ -28,6 +28,31 @@ The device UI is 480×480, German, espresso-themed.
 |---|---|
 | ![Statistik](docs/ui/screenshots/04-leaderboard.png) | ![System](docs/ui/screenshots/05-system-ap-qr.png) |
 
+## Optional user avatars (feature branch)
+
+The `feature/user-avatars` branch adds **30 built-in, static avatar presets**
+to help identify coffee members. A member's initials remain legible on each
+avatar, and preset `0` retains the original coloured-initials display.
+The presets are drawn with small LVGL shapes rather than uploaded images.
+
+The administrator assigns an avatar under **Benutzer → Bearbeiten → Benutzerbild**.
+Only the authenticated admin web interface can change it. The selection is
+saved with the user, included in regular backups, and survives a restart.
+Existing users require no migration.
+
+**Preview:** The booking and selected-user screenshots above are generated from
+the simulator with preset avatars for Anna, Ben, Clara and David, while Emma
+demonstrates the initials-only fallback. The admin's user list is shown under
+[admin screenshots](docs/ui/screenshots/README.md#admin-web).
+See [UI specification](docs/ui.md) and
+[ADR 0014](docs/adr/0014-user-avatar-presets.md) for technical details.
+
+> Screenshot images must be regenerated and committed alongside any visible UI
+> change. After editing the LVGL view, run `make screenshots` and
+> `make screenshots-check`; for admin changes run
+> `npm --prefix web run screenshots`. This repository's `main` branch keeps
+> the original images until the feature is merged.
+
 ## Quick start
 
 ```sh
