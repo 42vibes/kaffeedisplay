@@ -24,4 +24,7 @@ Branch: `feature/user-avatars`
 
 ## Evidence
 
-Pending CI and visual review.
+- Simulator seed now displays four preset avatars and the initials-only fallback.
+- README and UI specification updated with instructions and preview references.
+- Screenshot artifacts generated from the changed simulator and mock UI, rather than screenshots copied from `main`.
+- Screenshot verification and CI results must pass before marking this task done.
