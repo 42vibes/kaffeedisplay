@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Check firmware and admin bundle size budgets."""
+from __future__ import annotations
+
+import gzip
+import sys
+from pathlib import Path
+
+MAX_WEB_GZIP = 400 * 1024
+MAX_FIRMWARE = 3 * 1024 * 1024
+
+failed = False
+
+
+def check(label: str, size: int, limit: int) -> None:
+    global failed
+    ok = size <= limit
+    print(f"{label}: {size / 1024:.1f} KiB / {limit / 1024:.0f} KiB {'ok' if ok else 'TOO BIG'}")
+    failed = failed or not ok
+
+
+dist = Path("web/dist")
+if dist.exists():
+    total = 0
+    for path in dist.rglob("*"):
+        if path.is_file():
+            total += len(gzip.compress(path.read_bytes(), 9))
+    check("web bundle (gzip, all assets)", total, MAX_WEB_GZIP)
+else:
+    print("web bundle: not built, skipped")
+
+bins = sorted(Path("firmware/build").glob("*.bin")) if Path("firmware/build").exists() else []
+if bins:
+    for binary in bins:
+        check(binary.name, binary.stat().st_size, MAX_FIRMWARE)
+else:
+    print("firmware: not built, skipped")
+
+raise SystemExit(1 if failed else 0)
