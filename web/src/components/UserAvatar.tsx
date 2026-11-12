@@ -14,11 +14,8 @@ export function UserAvatar({ name, color, avatarId = 0, size = 32 }: AvatarProps
   const presetIndex = valid ? avatarId - 1 : 0;
   const motif = presetIndex % 6;
   const baseColor = valid ? palette[Math.floor(presetIndex / 6)] : color;
-  const initials = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const initials = (words.length > 1 ? [words[0], words[words.length - 1]] : words)
     .map((part) => Array.from(part)[0]?.toUpperCase() ?? "")
     .join("") || "?";
 
