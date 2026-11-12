@@ -343,7 +343,8 @@ esp_err_t handle_users_create(RequestContext& ctx) {
     if (!avatar) return send_service_error(ctx.req, result_error(avatar));
 
     const int avatar_id = static_cast<int>(*avatar.value);
-    auto event = ctx.server.service().create_user(trimmed_name, user_color, ctx.request_id, avatar_id);
+    auto& service = ctx.server.service();
+    auto event = service.create_user(trimmed_name, user_color, ctx.request_id, avatar_id);
     if (!event) return send_service_error(ctx.req, result_error(event));
     auto user = ctx.server.service().find_user(event.value->user_id);
     if (!user) return send_error(ctx.req, 500, "internal_error", "Benutzer nicht gefunden");
