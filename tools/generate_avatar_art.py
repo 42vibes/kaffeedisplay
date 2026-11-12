@@ -49,15 +49,39 @@ def art_from_pack():
         indices = []
         for byte in record[32:]:
             indices.extend([byte >> 4, byte & 15])
+        colors = []
+        for color in palette:
+            colors.append((
+                ((color >> 11) & 31) * 255 // 31,
+                ((color >> 5) & 63) * 255 // 63,
+                (color & 31) * 255 // 31,
+            ))
         rgb565 = bytearray()
         rgb = bytearray()
+        # Zoom in on the illustration (discard the UI mockup's dark margins)
+        # and interpolate to 40x40 so the small picture looks less pixelated.
         for y in range(SIZE):
+            sy = 2 + (y + 0.5) * 16 / SIZE - 0.5
+            y0 = max(0, min(W - 1, int(sy)))
+            y1 = min(W - 1, y0 + 1)
+            fy = max(0.0, min(1.0, sy - y0))
             for x in range(SIZE):
-                color = palette[indices[(y // SCALE) * W + (x // SCALE)]]
+                sx = 2 + (x + 0.5) * 16 / SIZE - 0.5
+                x0 = max(0, min(W - 1, int(sx)))
+                x1 = min(W - 1, x0 + 1)
+                fx = max(0.0, min(1.0, sx - x0))
+                c00 = colors[indices[y0 * W + x0]]
+                c10 = colors[indices[y0 * W + x1]]
+                c01 = colors[indices[y1 * W + x0]]
+                c11 = colors[indices[y1 * W + x1]]
+                channels = []
+                for c in range(3):
+                    top = c00[c] * (1 - fx) + c10[c] * fx
+                    bottom = c01[c] * (1 - fx) + c11[c] * fx
+                    channels.append(round(top * (1 - fy) + bottom * fy))
+                red, green, blue = channels
+                color = ((red >> 3) << 11) | ((green >> 2) << 5) | (blue >> 3)
                 rgb565.extend(struct.pack("<H", color))
-                red = ((color >> 11) & 31) * 255 // 31
-                green = ((color >> 5) & 63) * 255 // 63
-                blue = (color & 31) * 255 // 31
                 rgb.extend((red, green, blue))
         yield index + 1, bytes(rgb565), png(SIZE, SIZE, rgb)
 
