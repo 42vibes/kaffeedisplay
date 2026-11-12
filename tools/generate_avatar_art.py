@@ -13,7 +13,7 @@ import zlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PACK_DIR = ROOT / "assets" / "avatar_pack"
 W, SCALE, COUNT, COLORS = 20, 2, 30, 16
-SIZE = W * SCALE
+SIZE = 38  # Keep 30 illustrated presets within the existing 3 MiB OTA slots.
 STRIDE = SIZE * 2
 RECORD_SIZE = 32 + W * W // 2
 NAMES = (
@@ -59,7 +59,7 @@ def art_from_pack():
         rgb565 = bytearray()
         rgb = bytearray()
         # Zoom in on the illustration (discard the UI mockup's dark margins)
-        # and interpolate to 40x40 so the small picture looks less pixelated.
+        # and interpolate to the smaller flash-budgeted size so it stays legible.
         for y in range(SIZE):
             sy = 2 + (y + 0.5) * 16 / SIZE - 0.5
             y0 = max(0, min(W - 1, int(sy)))
