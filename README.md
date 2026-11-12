@@ -38,6 +38,10 @@ The presets are drawn with small LVGL shapes rather than uploaded images.
 The administrator assigns an avatar under **Benutzer → Bearbeiten → Benutzerbild**.
 Only the authenticated admin web interface can change it. The selection is
 saved with the user, included in regular backups, and survives a restart.
+
+| Admin: 30 avatar choices (preview) |
+|---|
+| ![Avatar selection in the administrator's user editor](docs/ui/screenshots/web-avatar-picker.png) |
 Existing users require no migration.
 
 **Preview:** The booking and selected-user screenshots above are generated from
