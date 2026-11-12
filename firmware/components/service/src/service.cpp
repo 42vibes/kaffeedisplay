@@ -167,7 +167,7 @@ class KaffeeServiceImpl final : public KaffeeService {
     std::vector<Event> events() const override;
     std::vector<Expense> expenses() const override;
     std::vector<CashCount> cash_counts() const override;
-    Ledger ledger_snapshot() const override;
+    std::shared_ptr<const Ledger> ledger_snapshot() const override;
 
     // --- Auth ---
     Result<Session> login(const std::string& username, const std::string& password,
@@ -767,9 +767,11 @@ std::vector<CashCount> KaffeeServiceImpl::cash_counts() const {
     return ledger_.cash_counts();
 }
 
-Ledger KaffeeServiceImpl::ledger_snapshot() const {
+std::shared_ptr<const Ledger> KaffeeServiceImpl::ledger_snapshot() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return ledger_;
+    auto snapshot = std::make_shared<Ledger>(ledger_);
+    snapshot->clear_commit_hook();
+    return snapshot;
 }
 
 // ---------------------------------------------------------------------------
@@ -1002,14 +1004,34 @@ Result<Unit> KaffeeServiceImpl::save_settings(const Settings& input,
         auto valid = validate_settings(merged);
         if (!valid) return valid;
 
-        auto applied = platform_.apply_display_settings(merged.display);
-        if (!applied) return applied;
-        auto network = platform_.apply_network_settings(merged.network);
-        if (!network) return network;
-        auto time = platform_.apply_time_settings(merged.time);
-        if (!time) return time;
+        // Persist first, then apply. A platform apply failure restores the
+        // previous settings blob and live state; a save failure leaves the
+        // device untouched.
+        const Settings previous = settings_;
+        auto rollback = [&]() {
+            (void)settings_store_.save(previous);
+            (void)platform_.apply_display_settings(previous.display);
+            (void)platform_.apply_network_settings(previous.network);
+            (void)platform_.apply_time_settings(previous.time);
+        };
+
         auto saved = settings_store_.save(merged);
         if (!saved) return saved;
+        auto applied = platform_.apply_display_settings(merged.display);
+        if (!applied) {
+            rollback();
+            return applied;
+        }
+        auto network = platform_.apply_network_settings(merged.network);
+        if (!network) {
+            rollback();
+            return network;
+        }
+        auto time = platform_.apply_time_settings(merged.time);
+        if (!time) {
+            rollback();
+            return time;
+        }
 
         settings_ = merged;
         const std::string meta = settings_to_json(settings_, false).dump();

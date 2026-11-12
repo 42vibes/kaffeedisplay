@@ -92,6 +92,7 @@ TEST_CASE("ledger writes require X-Request-Id") {
         {RouteMethod::Post, "/api/v1/ap/extend", false},
         {RouteMethod::Post, "/api/v1/display/test", false},
         {RouteMethod::Post, "/api/v1/ota", false},
+        {RouteMethod::Post, "/api/v1/factory-reset", true},
     };
     for (const auto& expected : kExpected) {
         const RouteSpec* spec = find_spec(expected.method, expected.pattern);
@@ -107,6 +108,7 @@ TEST_CASE("only the password-change window allows admin routes") {
         const bool expected = spec.auth == AuthPolicy::None || pattern == "/api/v1/auth/me" ||
                               pattern == "/api/v1/auth/logout" ||
                               pattern == "/api/v1/settings/password" ||
+                              pattern == "/api/v1/time/sync" ||
                               (pattern == "/api/v1/settings" && spec.method == RouteMethod::Get);
         CHECK_MESSAGE(allowed == expected, pattern.c_str());
     }

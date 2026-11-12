@@ -296,8 +296,8 @@ void ApiServerImpl::schedule_reboot(uint32_t delay_ms) {
     xTaskCreate(&reboot_task, "api_reboot", 2048, reinterpret_cast<void*>(delay_ms), 5, nullptr);
 }
 
-void ApiServerImpl::schedule_factory_reset() {
-    xTaskCreate(&factory_reset_task, "api_factory_reset", 4096, this, 5, nullptr);
+bool ApiServerImpl::schedule_factory_reset() {
+    return xTaskCreate(&factory_reset_task, "api_factory_reset", 4096, this, 5, nullptr) == pdPASS;
 }
 
 // --- Responses -----------------------------------------------------------

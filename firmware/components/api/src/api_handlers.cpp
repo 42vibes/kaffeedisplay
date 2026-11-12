@@ -881,7 +881,11 @@ esp_err_t handle_reports(RequestContext& ctx) {
         return send_error(ctx.req, 400, "invalid_input", "Zeitraum ist ungültig");
     }
 
-    const Ledger ledger = ctx.server.service().ledger_snapshot();
+    const std::shared_ptr<const Ledger> ledger_snapshot = ctx.server.service().ledger_snapshot();
+    if (!ledger_snapshot) {
+        return send_error(ctx.req, 500, "internal_error", "Bericht konnte nicht erzeugt werden");
+    }
+    const Ledger& ledger = *ledger_snapshot;
 
     std::string format = query_param(query, "format").value_or("");
     if (format.empty()) {
@@ -1139,7 +1143,10 @@ esp_err_t handle_restore(RequestContext& ctx) {
 esp_err_t handle_factory_reset(RequestContext& ctx) {
     // Authenticated + CSRF + request id checked by the dispatcher. Erase in a
     // helper task after the response so the connection is not cut mid-body.
-    ctx.server.schedule_factory_reset();
+    if (!ctx.server.schedule_factory_reset()) {
+        return send_error(ctx.req, 500, "internal_error",
+                          "Werkseinstellungen konnten nicht gestartet werden");
+    }
     ESP_LOGW(kTag, "factory reset requested from %s", client_ip(ctx.req).c_str());
     return send_no_content(ctx.req);
 }

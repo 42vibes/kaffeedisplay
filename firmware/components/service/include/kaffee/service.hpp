@@ -218,9 +218,9 @@ class KaffeeService : public IUiBackend {
     virtual std::vector<CashCount> cash_counts() const = 0;
 
     // Read-only ledger snapshot for report generation (ADR 0013). The copy is
-    // taken under the service mutex; callers must not retain it across
-    // mutations beyond a single report request.
-    virtual Ledger ledger_snapshot() const = 0;
+    // taken under the service mutex, its commit hook is cleared and it is
+    // exposed through const so reports cannot mutate the live ledger.
+    virtual std::shared_ptr<const Ledger> ledger_snapshot() const = 0;
 
     // --- Auth (single admin) ---
     virtual Result<Session> login(const std::string& username, const std::string& password,

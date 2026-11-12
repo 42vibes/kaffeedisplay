@@ -100,6 +100,7 @@ class FakePlatform : public IPlatform {
     Result<Unit> apply_network_settings(const NetworkSettings& settings) override {
         network_settings = settings;
         ++network_applies;
+        if (fail_network_apply) return Result<Unit>::fail("network", "forced apply failure");
         return Result<Unit>::ok(Unit{});
     }
     Result<Unit> apply_time_settings(const TimeSettings& settings) override {
@@ -140,6 +141,7 @@ class FakePlatform : public IPlatform {
     int network_applies = 0;
     int time_applies = 0;
     int network_resets = 0;
+    bool fail_network_apply = false;
 };
 
 class FailingSettingsStore final : public ISettingsStore {
@@ -760,14 +762,15 @@ TEST_CASE("ledger snapshot is a stable report view") {
     const std::string product_id = fixture.product("Kaffee", 60);
     REQUIRE(static_cast<bool>(fixture.service->purchase(user_id, product_id, "snap-buy")));
 
-    const Ledger snapshot = fixture.service->ledger_snapshot();
-    const size_t snapshot_events = snapshot.events().size();
-    CHECK(snapshot.users().size() == 1);
-    CHECK(snapshot.balance(user_id) == -60);
+    const std::shared_ptr<const Ledger> snapshot = fixture.service->ledger_snapshot();
+    REQUIRE(snapshot != nullptr);
+    const size_t snapshot_events = snapshot->events().size();
+    CHECK(snapshot->users().size() == 1);
+    CHECK(snapshot->balance(user_id) == -60);
 
     fixture.user("Ben");
-    CHECK(snapshot.events().size() == snapshot_events);
-    CHECK(fixture.service->ledger_snapshot().events().size() == snapshot_events + 1);
+    CHECK(snapshot->events().size() == snapshot_events);
+    CHECK(fixture.service->ledger_snapshot()->events().size() == snapshot_events + 1);
 }
 
 TEST_CASE("settings save applies network and time to the platform") {
@@ -785,6 +788,20 @@ TEST_CASE("settings save applies network and time to the platform") {
     CHECK(fixture.platform.network_settings.hostname == "kaffee-test");
     CHECK_FALSE(fixture.platform.network_settings.ap_password.empty());
     CHECK(fixture.platform.time_settings.timezone == "Europe/Berlin");
+}
+
+TEST_CASE("failed network apply rolls back settings") {
+    ServiceFixture fixture(true);
+    const Settings before = fixture.service->settings();
+    Settings next = before;
+    next.network.ap_ssid = "Kaffeekasse-Should-Not-Persist";
+    fixture.platform.fail_network_apply = true;
+
+    auto saved = fixture.service->save_settings(next, "settings-rollback");
+    REQUIRE_FALSE(static_cast<bool>(saved));
+    CHECK(fixture.service->settings().network.ap_ssid == before.network.ap_ssid);
+    CHECK(fixture.settings_store.stored().network.ap_ssid == before.network.ap_ssid);
+    CHECK(fixture.platform.network_settings.ap_ssid == before.network.ap_ssid);
 }
 
 TEST_CASE("factory reset clears storage, settings and sessions") {
