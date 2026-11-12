@@ -9,10 +9,12 @@ IDF ?= $(shell command -v idf.py 2>/dev/null)
 NPM ?= npm
 CMAKE ?= cmake
 PYTHON ?= python3
+SCREENSHOT_DIR ?= docs/ui/screenshots
+SCREENSHOT_CHECK_DIR ?= /tmp/kaffeekasse-screenshots
 
 .PHONY: help bootstrap build build-native build-docker flash flash-docker monitor \
-	test test-host test-web test-e2e e2e hil web web-dev mock sim fmt fmt-check \
-	lint docs assets tools-deps check clean
+	test test-host test-web test-e2e e2e hil web web-dev mock sim sim-build \
+	screenshots screenshots-check test-ui fmt fmt-check lint docs assets tools-deps check clean
 
 help:
 	@echo "Kaffeekasse targets:"
@@ -23,7 +25,9 @@ help:
 	@echo "  monitor       serial monitor"
 	@echo "  web           build admin SPA"
 	@echo "  web-dev       Vite + mock API"
-	@echo "  sim           build and run the LVGL simulator (provided by T-004)"
+	@echo "  sim           build and run the LVGL simulator"
+	@echo "  screenshots   regenerate docs/ui/screenshots from the simulator"
+	@echo "  test-ui       LVGL click/hit-test smoke test (SDL2, no board)"
 	@echo "  test          host + web tests"
 	@echo "  e2e           Playwright admin UI tests"
 	@echo "  hil           hardware-in-the-loop smoke test ($(PORT))"
@@ -97,20 +101,38 @@ monitor:
 		docker run --rm -it -v "$(CURDIR)/firmware:/project" -w /project --device=$(PORT) \
 			$(IDF_IMAGE) bash -lc '. $$IDF_PATH/export.sh && idf.py -p $(PORT) monitor'; fi
 
-sim:
-	$(CMAKE) -S sim -B sim/build
+sim-build:
+	$(CMAKE) -S sim -B sim/build -DCMAKE_BUILD_TYPE=Release
 	$(CMAKE) --build sim/build -j
+
+sim: sim-build
 	./sim/build/kaffeekasse-sim
+
+screenshots: sim-build
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/01-idle.png --page 1 --state idle
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/02-user-selected.png --page 1 --state selected
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/03-booking-toast.png --page 1 --state toast
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/04-leaderboard.png --page 2 --state idle
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/05-system-ap-qr.png --page 3 --state ap
+
+screenshots-check: sim-build
+	rm -rf $(SCREENSHOT_CHECK_DIR)
+	mkdir -p $(SCREENSHOT_CHECK_DIR)
+	$(MAKE) screenshots SCREENSHOT_DIR=$(SCREENSHOT_CHECK_DIR)
+	python3 tools/check_screenshots.py docs/ui/screenshots $(SCREENSHOT_CHECK_DIR)
+
+test-ui: sim-build
+	./sim/build/kaffeekasse-sim --click-test
 
 fmt:
 	@if command -v clang-format >/dev/null; then \
-		find firmware tests/host sim \( -path '*/third_party' -o -path '*/build' -o -path '*/managed_components' -o -path 'firmware/components/webassets/generated' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null | xargs -r clang-format -i; \
+		find firmware tests/host sim \( -path '*/third_party' -o -path '*/build' -o -path '*/_deps' -o -path '*/managed_components' -o -path 'firmware/components/webassets/generated' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null | xargs -r clang-format -i; \
 	fi
 	$(NPM) --prefix web run typecheck
 
 fmt-check:
 	@if command -v clang-format >/dev/null; then \
-		files=$$(find firmware tests/host sim \( -path '*/third_party' -o -path '*/build' -o -path '*/managed_components' -o -path 'firmware/components/webassets/generated' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null); \
+		files=$$(find firmware tests/host sim \( -path '*/third_party' -o -path '*/build' -o -path '*/_deps' -o -path '*/managed_components' -o -path 'firmware/components/webassets/generated' \) -prune -o \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print 2>/dev/null); \
 		clang-format --dry-run --Werror $$files; \
 	else echo "clang-format not installed, skipping"; fi
 

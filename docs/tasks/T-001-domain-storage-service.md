@@ -11,6 +11,12 @@ The domain layer and interfaces are in `firmware/components/domain` and
 `firmware/components/service`. Host tests already cover core ledger behaviour.
 This task completes persistence and the service facade so API/UI can integrate.
 
+## UI dependency (T-004)
+
+The device UI hides and blocks guest sales when `AppSettings.guest_enabled` is
+false. `KaffeeService::guest_sale()` and the ledger must enforce the same rule so
+the UI check cannot be bypassed (API/serial or stale UI state).
+
 ## Deliverables
 
 1. File-backed `IEventStore` implementation (host) + LittleFS implementation
