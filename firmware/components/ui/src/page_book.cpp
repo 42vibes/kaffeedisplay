@@ -12,7 +12,7 @@ namespace kaffee::ui {
 
 namespace {
 
-// Each preset is a distinct 40x40 RGB565 illustration held in flash. Only
+// Each preset is a distinct 38x38 RGB565 illustration held in flash. Only
 // the selected user's initials are drawn at runtime. No dynamic decoder/upload.
 lv_obj_t* make_avatar(lv_obj_t* parent, const std::string& name, const std::string& color, int size,
                       int avatar_id = 0) {
