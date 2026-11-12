@@ -128,10 +128,10 @@ class KaffeeServiceImpl final : public KaffeeService {
 
     // --- Admin operations ---
     Result<Event> create_user(const std::string& name, const std::string& color,
-                              const std::string& request_id) override;
+                              const std::string& request_id, int avatar_id) override;
     Result<Event> update_user(const std::string& user_id, const std::string& name,
                               const std::string& color, bool active,
-                              const std::string& request_id) override;
+                              const std::string& request_id, int avatar_id) override;
     Result<Event> archive_user(const std::string& user_id, const std::string& request_id) override;
     Result<Event> create_product(const std::string& name, const std::string& category,
                                  const std::string& icon, const std::string& color,
@@ -587,21 +587,22 @@ Result<Event> KaffeeServiceImpl::guest_sale(const std::string& product_id,
 }
 
 Result<Event> KaffeeServiceImpl::create_user(const std::string& name, const std::string& color,
-                                             const std::string& request_id) {
+                                             const std::string& request_id, int avatar_id) {
     return mutate([&]() -> Result<Event> {
         if (auto existing = existing_request_locked(request_id))
             return Result<Event>::ok(*existing);
-        return ledger_.create_user(name, color, request_id, now(), time_source());
+        return ledger_.create_user(name, color, request_id, now(), time_source(), avatar_id);
     });
 }
 
 Result<Event> KaffeeServiceImpl::update_user(const std::string& user_id, const std::string& name,
                                              const std::string& color, bool active,
-                                             const std::string& request_id) {
+                                             const std::string& request_id, int avatar_id) {
     return mutate([&]() -> Result<Event> {
         if (auto existing = existing_request_locked(request_id))
             return Result<Event>::ok(*existing);
-        return ledger_.update_user(user_id, name, color, active, request_id, now(), time_source());
+        return ledger_.update_user(user_id, name, color, active, request_id, now(), time_source(),
+                                   avatar_id);
     });
 }
 
