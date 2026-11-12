@@ -13,6 +13,7 @@ nlohmann::json user_to_json(const User& u) {
     nlohmann::json j{{"id", u.id},
                      {"name", u.name},
                      {"color", u.color},
+                     {"avatar_id", u.avatar_id},
                      {"active", u.active},
                      {"created_at", u.created_at}};
     if (u.archived_at) j["archived_at"] = u.archived_at;
@@ -24,6 +25,7 @@ User user_from_json(const nlohmann::json& j) {
     u.id = j.value("id", "");
     u.name = j.value("name", "");
     u.color = j.value("color", "");
+    u.avatar_id = j.value("avatar_id", 0);
     u.active = j.value("active", true);
     u.created_at = j.value("created_at", static_cast<Timestamp>(0));
     u.archived_at = j.value("archived_at", static_cast<Timestamp>(0));
@@ -67,6 +69,8 @@ nlohmann::json event_to_json(const Event& e) {
     put_if(j, "user_id", e.user_id);
     put_if(j, "user_name", e.user_name);
     put_if(j, "user_color", e.user_color);
+    // Omit 0 to preserve hashes of events recorded by older firmware.
+    if (e.user_avatar_id != 0) j["user_avatar_id"] = e.user_avatar_id;
     if (!e.user_id.empty()) j["user_active"] = e.user_active;
     put_if(j, "product_id", e.product_id);
     put_if(j, "product_name", e.product_name);
@@ -106,6 +110,7 @@ Event event_from_json(const nlohmann::json& j) {
     e.user_id = j.value("user_id", "");
     e.user_name = j.value("user_name", "");
     e.user_color = j.value("user_color", "");
+    e.user_avatar_id = j.value("user_avatar_id", 0);
     e.user_active = j.value("user_active", true);
     e.product_id = j.value("product_id", "");
     e.product_name = j.value("product_name", "");
