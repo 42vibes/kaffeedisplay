@@ -177,6 +177,16 @@ def _parse_event_id(reply: str) -> str:
 def _serial_command(command: str) -> str:
     try:
         with _serial() as cli:
+            # `book`/`void` are locked on the default firmware; unlock them with
+            # the admin password for this boot (10 minute window). Older
+            # firmware without the command simply ignores the ERR reply.
+            if command.split(maxsplit=1)[0] in ("book", "void") and ADMIN_PASSWORD:
+                try:
+                    unlock = cli.command(f"unlock-writes {ADMIN_PASSWORD}", timeout=TIMEOUT)
+                    if not unlock.startswith("OK"):
+                        print(f"hil: serial write unlock returned {unlock!r}")
+                except CliError as exc:
+                    print(f"hil: serial write unlock skipped: {exc}")
             return cli.command(command, timeout=TIMEOUT)
     except CliError as exc:
         raise AssertionError(f"serial command {command!r} failed: {exc}") from exc
