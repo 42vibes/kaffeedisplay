@@ -32,7 +32,11 @@ mismatch instead of mis-routing.
 ## Auth, sessions, CSRF
 
 - Session cookie `kaffee_session`: `HttpOnly; SameSite=Strict; Path=/`. No
-  `Secure` flag because the device serves plain HTTP by design.
+  `Secure` flag because the device serves plain HTTP by design. `httpd_resp_set_hdr`
+  stores the value pointer rather than copying it, so the cookie header is
+  formatted into a server-lifetime buffer. When the wall clock is unset,
+  `expires_at` is 0 and the cookie uses a 30-minute fallback `Max-Age`; service
+  session expiry still uses monotonic uptime.
 - Every request calls `KaffeeService::validate_session`; there is no parallel
   session store. `GET /auth/me` re-issues the cookie with the refreshed sliding
   expiry.
@@ -52,6 +56,10 @@ mismatch instead of mis-routing.
   store.
 - Login passes the client IP to the service; `auth` maps to 401 and
   `rate_limit` to 429.
+- PBKDF2 uses mbedTLS's SHA-accelerated implementation on the device (10 000
+  iterations, ~0.9 s login). Older 50 000-iteration hashes are rehashed
+  transparently on the next successful login. Host tests keep the portable
+  implementation and standard PBKDF2 vectors.
 
 ## Errors
 

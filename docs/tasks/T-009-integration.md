@@ -89,17 +89,35 @@ login/`/auth/me` and renders a forced first-login change form before the shell.
   creation failure returns 500, and OpenAPI/docs now describe all-time report
   semantics, errors and buffered CSV sending.
 
+## Live AP login fixes
+
+Live testing against the AP found two blockers:
+
+1. **Empty `Set-Cookie`.** `httpd_resp_set_hdr()` stores the value pointer, and
+   the cookie was formatted into a stack buffer that died when the handler
+   returned. It now uses a server-lifetime buffer, rejects an empty token, and
+   logs token/header lengths. Current wall time unset uses a 30-minute
+   `Max-Age` fallback while sessions stay monotonic.
+2. **Slow login.** The portable PBKDF2 path took ~13.6 s for 50k iterations on
+   the S3. The device now uses mbedTLS's SHA-accelerated PBKDF2 at 10 000
+   iterations; the portable path remains for host tests. Old 50k hashes are
+   rehashed on the next successful login.
+
+Measured over the real AP from 192.168.4.2: fresh setup-password login 0.88 s,
+forced password change 1.77 s, new-password login 0.89 s. The first login of a
+pre-upgrade 50k hash is a one-time 5.1 s (verification + transparent rehash).
+
 ## Evidence
 
-- `make test-host`: 135 test cases / 17,380 assertions, all pass (new tests:
+- `make test-host`: 136 test cases / 17,387 assertions, all pass (new tests:
   ledger snapshot, settings apply/rollback, factory reset, report JSON envelope,
   all-time report bounds, setup-password persistence/reload/clear/upgrade,
-  LittleFS mount policy, UI strings).
+  PBKDF2 iteration migration, LittleFS mount policy, UI strings).
 - `make test-web`: typecheck + 28 Vitest tests, including the forced first-login
   form and invalid timestamp formatting.
 - `make test-e2e`: 10 Playwright tests, including the typed factory-reset flow.
 - `make assets` + `make build-docker`: success with the real SPA
-  (3 assets, 120.4 KiB gzip; app image 0x2af8b0 with 10% partition free).
+  (3 assets, 120.4 KiB gzip; app image 0x2afd80 with 10% partition free).
 - `make flash` on `/dev/ttyUSB0`, serial boot log confirms: storage mounted,
   UI started on page 1, network ready, AP started for provisioning, HTTP API
   started, `boot health ... => ok`, OTA image confirmed.
@@ -109,8 +127,16 @@ login/`/auth/me` and renders a forced first-login change form before the shell.
   boot before the health/OTA confirmation and is covered by the unit-tested
   policy. The setup password key survived storage erase, reflash and reboot
   unchanged.
-- Host has no Wi-Fi interface, so the API could not be exercised over the AP
-  from this machine; HIL also needs the not-yet-implemented serial CLI.
+- Live AP (192.168.4.2): `Set-Cookie: kaffee_session=<token>; Path=/; HttpOnly;
+  SameSite=Strict; Max-Age=1800`; `/auth/me` 200; forced change 204; new login
+  must_change=false; GET settings/device/users/products/summary 200; overview
+  `csv_excel` 200 with BOM/`sep=;`; `/` 200 real SPA; hashed JS 200 + gzip;
+  `/generate_204` 204; `/hotspot-detect.html` 302. Temp product creation was
+  skipped after the host Wi-Fi link dropped; cleanup of the temporary user is
+  pending on the board.
+- Temp product creation was skipped after the host Wi-Fi link dropped; one
+  temporary user remains on the board and cleanup is pending via the admin UI.
+- HIL still needs the not-yet-implemented serial CLI.
 - Branch `feat/T-009-integration` is pushed. PR creation from this environment
   failed with `Resource not accessible by personal access token
   (createPullRequest)`; open the PR manually from the pushed branch.

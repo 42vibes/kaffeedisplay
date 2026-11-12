@@ -12,8 +12,11 @@ for the duration of the admin window, but never to the internet.
 ## Admin authentication
 
 - Single account `admin`; password stored as PBKDF2-HMAC-SHA256 with a random
-  16-byte salt, 50 000 iterations, constant-time compare. Password hashing runs
-  outside the global service mutex.
+  16-byte salt, 10 000 iterations, constant-time compare. The device uses
+  mbedTLS's SHA-accelerated `mbedtls_pkcs5_pbkdf2_hmac_ext`; the portable C++
+  path remains for host tests. Older 50 000-iteration hashes are rehashed
+  transparently on the next successful login. Password hashing runs outside the
+  global service mutex.
 - Initial password is generated on first boot, stored in a dedicated NVS key
   (plaintext, never in backups/journal/API settings) and shown on device page 3
   until the admin changes it. It survives reboots, so a reboot before the first
