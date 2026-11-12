@@ -15,6 +15,17 @@ describe("UserAvatar", () => {
     expect(avatar).toHaveStyle({ backgroundColor: "#E07A5F" });
   });
 
+  it("renders each of the 30 presets without an image request", () => {
+    for (let id = 1; id <= 30; id += 1) {
+      const { container, unmount } = render(
+        <UserAvatar name="Ada Lovelace" color="#123456" avatarId={id} />,
+      );
+      expect(screen.getByText("AL")).toBeInTheDocument();
+      expect(container.querySelector("img")).toBeNull();
+      unmount();
+    }
+  });
+
   it("treats unsupported preset numbers as initials only", () => {
     render(<UserAvatar name="Ada" color="#123456" avatarId={31} />);
     const avatar = screen.getByText("A").parentElement;
