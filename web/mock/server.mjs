@@ -10,13 +10,14 @@ const CSRF_TOKEN = "mock-csrf-token";
 // ---------------------------------------------------------------------------
 
 const users = [
-  { id: "usr_ada", name: "Ada", color: "#D4A373", active: true, created_at: now - 86400 * 90 },
-  { id: "usr_bob", name: "Bob", color: "#8FBC8F", active: true, created_at: now - 86400 * 60 },
-  { id: "usr_cara", name: "Cara", color: "#7FA7C9", active: true, created_at: now - 86400 * 30 },
+  { id: "usr_ada", name: "Ada", color: "#D4A373", avatar_id: 1, active: true, created_at: now - 86400 * 90 },
+  { id: "usr_bob", name: "Bob", color: "#8FBC8F", avatar_id: 8, active: true, created_at: now - 86400 * 60 },
+  { id: "usr_cara", name: "Cara", color: "#7FA7C9", avatar_id: 15, active: true, created_at: now - 86400 * 30 },
   {
     id: "usr_dora",
     name: "Dora",
     color: "#C9A0DC",
+    avatar_id: 0,
     active: false,
     created_at: now - 86400 * 200,
     archived_at: now - 86400 * 10,
@@ -461,6 +462,7 @@ function addUser(body) {
     id,
     name: String(body.name ?? "Neu").slice(0, 40),
     color: body.color ?? "#D4A373",
+    avatar_id: Number.isInteger(body.avatar_id) && body.avatar_id >= 0 && body.avatar_id <= 30 ? body.avatar_id : 0,
     active: true,
     created_at: now,
   };
@@ -476,6 +478,9 @@ function patchUser(id, body) {
   if (!user) return null;
   if (typeof body.name === "string" && body.name.trim()) user.name = body.name.trim().slice(0, 40);
   if (typeof body.color === "string") user.color = body.color;
+  if (Number.isInteger(body.avatar_id) && body.avatar_id >= 0 && body.avatar_id <= 30) {
+    user.avatar_id = body.avatar_id;
+  }
   if (typeof body.active === "boolean") {
     user.active = body.active;
     if (body.active) delete user.archived_at;
