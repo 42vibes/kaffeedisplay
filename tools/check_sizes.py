@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import json
 import sys
 from pathlib import Path
 
@@ -28,6 +29,14 @@ if dist.exists():
     check("web bundle (gzip, all assets)", total, MAX_WEB_GZIP)
 else:
     print("web bundle: not built, skipped")
+
+embedded = Path("firmware/components/webassets/generated/manifest.json")
+if embedded.exists():
+    payload = json.loads(embedded.read_text(encoding="utf-8"))
+    check("embedded web assets (gzip)", int(payload["gzip_bytes"]), MAX_WEB_GZIP)
+    check("embedded web assets (raw)", int(payload["original_bytes"]), 4 * MAX_WEB_GZIP)
+else:
+    print("embedded web assets: not generated, skipped")
 
 bins = sorted(Path("firmware/build").glob("*.bin")) if Path("firmware/build").exists() else []
 if bins:

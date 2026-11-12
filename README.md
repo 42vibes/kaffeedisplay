@@ -21,8 +21,10 @@ Early development. See `docs/` for architecture, task board and decisions.
 make bootstrap    # check toolchains, install web dependencies
 make test         # host unit tests + web unit tests
 make web          # build the admin SPA
+make assets       # embed the SPA into the firmware
 make build        # build firmware (requires ESP-IDF 5.x or Docker)
 make flash        # flash /dev/ttyUSB0
+make hil          # hardware smoke test (skips without a board)
 make sim          # LVGL simulator on the host
 make check        # everything CI runs
 ```
@@ -48,6 +50,7 @@ make flash
 | `docs/ui.md` | Device and admin UI specification |
 | `docs/security.md` | Threat model, auth, AP policy |
 | `docs/operations.md` | Provisioning, backup, OTA, recovery |
+| `docs/serial-cli.md` | Serial protocol, clock/backup/reset commands |
 | `docs/testing.md` | Test strategy and hardware-in-the-loop |
 | `docs/tasks/` | Task board for parallel agents |
 

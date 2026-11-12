@@ -32,6 +32,8 @@ These are admin-only concerns and are not shown on the booking screen.
 - The admin browser sets time on login and every ~5 minutes. A manual
   `Zeit synchronisieren` button exists in System settings.
 - SNTP is used if STA has internet.
+- With USB attached, `python3 tools/settime.py` sets the clock over the serial
+  CLI (see `docs/serial-cli.md`).
 - If the device is powered but offline for days, time stays accurate from the
   last sync minus small crystal drift.
 - If power is lost, the clock is restored as `restored`/`unset`. Bookings still
@@ -66,15 +68,52 @@ These are admin-only concerns and are not shown on the booking screen.
 ## USB / offline periods
 
 - USB is not required at runtime. The device can run for days without network.
-- Serial console: logs, `status`, `time set`, `backup`, `factory-reset`.
+- Serial console: logs, `status`, `time set`, `backup`, `factory-reset`. The full
+  line protocol and HIL-only commands are documented in `docs/serial-cli.md`.
 - If unplugged from power, it stops; time is restored/resynced on next boot.
 - Journal compaction and storage-full handling work offline. When storage is
   critically full, new bookings are rejected with a clear message; admin must
   export/compact.
 
+## Build, assets and release
+
+- `make web` builds the admin SPA. `make assets` embeds `web/dist` as
+  deterministic gzip and raw data in the `webassets` component; generated files
+  stay out of git. `make build` runs both.
+- Device fonts are committed by the UI track in
+  `firmware/components/ui/src/fonts/` (Montserrat subsets with German umlauts,
+  `€`, digits and punctuation, generated once with `lv_font_conv@1.5.3`). The
+  ESP-IDF build must not need Node; their README documents regeneration.
+- `make check` runs format, OpenAPI lint, relative-link checks, host/web tests,
+  the web build, asset generation and size budgets. On a machine without
+  `idf.py` it skips the firmware build; CI/Docker builds the firmware.
+- Releases are built by `.github/workflows/release.yml` from `v*` tags. The
+  GitHub release contains `firmware.bin` (OTA app image), `firmware-merged.bin`
+  (flash at offset `0x0`), `SHA256SUMS`, `manifest.json` (commit, IDF image, web
+  asset sizes, checksums) and a changelog. Host tests run in the release job.
+- `make hil` runs the hardware smoke test when a board is at `/dev/ttyUSB0`;
+  see `docs/testing.md`.
+
+## Hardware smoke test
+
+```sh
+make flash
+make hil                                        # read-only
+HIL_ALLOW_WRITES=1 HIL_ADMIN_PASSWORD='...' make hil
+```
+
+The script does not reset the board or start the AP unless requested with
+`--reset` / `--start-ap`. In write mode it creates a temp user/product, books
+through the serial `book` command, tops up, voids through the serial `void`
+command and exports a report CSV. Cleanup **voids the test events and archives**
+the temp user/product; the append-only audit trail remains. It skips clearly
+when the serial port is absent; if the board runs different firmware the boot
+check fails instead of pretending the test passed.
+
 ## Recovery
 
-- **Admin password lost**: serial CLI reset (physical access) or factory reset.
+- **Admin password lost**: serial CLI reset (physical access) or factory reset;
+  commands are in `docs/serial-cli.md`.
 - **AP won't start**: check page 3 status/logs; reboot; USB serial diagnostics.
 - **Display black**: verify power, then USB logs; ST7701 init depends on board
   revision. Keep the last known-good rotation in NVS.

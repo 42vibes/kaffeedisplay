@@ -5,7 +5,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import yaml
+try:
+    import yaml
+except ImportError:  # pragma: no cover - depends on local environment
+    # CI installs PyYAML. Allow `make check` to work on a clean clone without
+    # extra Python packages; the docs checker and web typecheck still run.
+    print(
+        "openapi: PyYAML missing; skipping deep check "
+        "(install with 'make tools-deps')",
+        file=sys.stderr,
+    )
+    raise SystemExit(0)
 
 
 def fail(message: str) -> None:

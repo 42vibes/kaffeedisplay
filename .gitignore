@@ -31,8 +31,10 @@ local/
 .idea/
 .DS_Store
 *.swp
+__pycache__/
+*.pyc
 
 # Generated assets
 web/dist/
 firmware/main/generated/
-firmware/components/ui/generated/
+firmware/components/webassets/generated/
