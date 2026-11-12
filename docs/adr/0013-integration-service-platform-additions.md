@@ -38,6 +38,19 @@ and every new interface method has a default implementation except the two
    `reset_network_credentials()`. The device adapter forwards them to
    `NetworkManager`; host fakes keep compiling unchanged. The service calls the
    two apply hooks from `save_settings()` and `import_backup()`.
+4. `ISettingsStore` gains default methods for the initial admin password
+   (`load_setup_password`, `save_setup_password`, `clear_setup_password`). The
+   NVS store keeps it in a dedicated `setup_password` key, separate from the
+   `Settings` JSON blob, so backups and the event journal never contain it. The
+   service persists it before the generated credentials, loads it on boot while
+   `must_change_password` is true, and clears it immediately after a successful
+   `change_admin_password()`. A device upgraded from firmware that kept the
+   password only in RAM has no key; the service rotates the admin credentials
+   and generates a fresh setup password instead of locking the admin out.
+5. `IUiBackend` gains additive `must_change_admin_password()` and
+   `setup_password()`. The device UI uses them to show an “Erste Einrichtung”
+   card on page 3 (password, AP SSID/URL, change instruction) and to keep
+   `must_change_admin_password()` true until the web change succeeds.
 
 The API's factory-reset route is authenticated, CSRF-checked and requires
 `X-Request-Id`. It returns 204 and runs the erase + reboot from a helper task so
@@ -52,3 +65,6 @@ the response can flush before the AP/HTTP server goes away.
   path on flash faults.
 - `NetworkSettings`/`TimeSettings` secrets never leave the service; the platform
   receives the merged values directly from inside the service mutex.
+- The initial admin password is plaintext in NVS until the first successful
+  change. Physical access to the device is the recovery boundary; the key is
+  never exported in backups, the journal or API settings responses.

@@ -51,17 +51,36 @@ A second hardware-only bug was fixed in `net`: `esp_wifi_set_config()` was
 called before `esp_wifi_set_mode()` (`ESP_ERR_WIFI_MODE` on cold boot). Both AP
 and STA setup now set the mode first.
 
+## First-boot usability/security fix
+
+The generated admin password previously lived only in RAM. A reboot before the
+first change locked the admin out and the device UI never showed the password.
+The service now persists it in a dedicated NVS settings key
+(`setup_password`), outside `Settings`, backups and the journal; loads it on
+boot while `must_change_admin_password()` is true; clears it after a successful
+change; and keeps the force-change state until then.
+
+`IUiBackend` exposes `must_change_admin_password()`/`setup_password()`.
+Page 3 shows an `Erste Einrichtung` card with the password, AP SSID/URL and the
+instruction to change it in the web UI; the page-1 empty state points to
+`Seite 3 → WLAN + Passwort`. The SPA reads `must_change_password` from
+login/`/auth/me` and renders a forced first-login change form before the shell.
+
 ## Evidence
 
-- `make test-host`: 128 test cases / 17,282 assertions, all pass (new tests:
-  ledger snapshot, settings apply hooks, factory reset, report JSON envelope).
+- `make test-host`: 132 test cases / 17,334 assertions, all pass (new tests:
+  ledger snapshot, settings apply hooks, factory reset, report JSON envelope,
+  setup-password persistence/reload/clear/upgrade, UI strings).
+- `make test-web`: typecheck + 27 Vitest tests, including the forced first-login
+  form.
 - `make assets` + `make build-docker`: success with the real SPA
-  (3 assets, 120.0 KiB gzip; app image 0x2ad760 with 11% partition free).
+  (3 assets, 120.4 KiB gzip; app image 0x2af170 with 11% partition free).
 - `make flash` on `/dev/ttyUSB0`, serial boot log confirms: storage mounted,
   UI started on page 1, network ready, AP started for provisioning, HTTP API
   started, `boot health ... => ok`, OTA image confirmed.
-- Serial boot log: `/tmp/opencode/boot-final.log` from the final integration
-  image.
+- Serial boot log: `/tmp/opencode/boot-setup-final.log` from the final image. The
+  setup password key survived a reflash and reboot unchanged (`setup_password`
+  present in NVS, value verified by dump).
 - Host has no Wi-Fi interface, so the API could not be exercised over the AP
   from this machine; HIL also needs the not-yet-implemented serial CLI.
 - Branch `feat/T-009-integration` is pushed. PR creation from this environment
@@ -72,15 +91,19 @@ and STA setup now set the mode first.
 
 1. Confirm page 1 (`Buchen`) renders after boot; swipe to leaderboard and
    system page.
-2. Touch all four corners and the exact screen edges; verify no offset after
+2. On page 3 while `Erste Einrichtung` is visible, confirm the admin password,
+   AP SSID and `http://192.168.4.1/` are readable without scrolling. The card
+   disappears after the web password change.
+3. Touch all four corners and the exact screen edges; verify no offset after
    rotation changes from the admin web.
-3. Measure frame rate while swiping and after a booking toast (target smooth
+4. Measure frame rate while swiping and after a booking toast (target smooth
    60 Hz; report any visible tearing).
-4. Verify dim after 60 s and screen-off after 10 min, then wake by touch.
-5. Join `Kaffeekasse-XXXX`, open `http://192.168.4.1`, log in with the setup
-   password, change it, create a user/product and download a report CSV.
-6. Verify captive probe redirect from a phone while the AP is active.
-7. Run `python3 tools/hil.py --port /dev/ttyUSB0 --allow-writes --reset` after
+5. Verify dim after 60 s and screen-off after 10 min, then wake by touch.
+6. Join `Kaffeekasse-XXXX`, open `http://192.168.4.1`, log in with the setup
+   password, complete the forced password change, create a user/product and
+   download a report CSV.
+7. Verify captive probe redirect from a phone while the AP is active.
+8. Run `python3 tools/hil.py --port /dev/ttyUSB0 --allow-writes --reset` after
    the serial CLI task is implemented.
 
 ## Files

@@ -7,7 +7,8 @@
    15 minutes as a provisioning convenience.
 3. Join `Kaffeekasse-XXXX` with the QR or password shown on page 3.
 4. Open `http://192.168.4.1` (or scan the URL QR).
-5. Log in with the initial admin password shown on the setup screen; change it.
+5. Log in with the initial admin password shown on page 3 (`Erste
+   Einrichtung`); the web UI forces a password change before anything else.
 6. Create members and products; optionally configure STA Wi-Fi.
 7. Stop the AP (or let it time out). The device returns to offline operation.
 
