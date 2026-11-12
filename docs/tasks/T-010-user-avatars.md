@@ -8,7 +8,7 @@ Branch: `feature/user-avatars`
 ## Scope
 
 - 30 static firmware presets, five palettes × six simple motifs, and visible initials.
-- Admin-only selection from the user editor, with initials-only fallback.
+- New users receive a server-assigned random preset by default (excluding the immediately preceding new user's preset); explicit IDs or initials-only (0) remain selectable by admin.
 - Persist avatar IDs (0..30) using compatible user events.
 - Update REST/OpenAPI, tests, ADR and documentation.
 - Leave booking, money and balances unchanged.
@@ -16,7 +16,7 @@ Branch: `feature/user-avatars`
 ## Acceptance
 
 - Current users and old journal hashes work with avatar 0.
-- Admin can select, save, clear and restore the avatar.
+- Admin can select, save, clear and restore the avatar, and default new-user POSTs receive a random 1–30 preset.
 - A stale user PATCH that does not mention avatar does not clear it.
 - IDs outside 0..30 are rejected and never committed.
 - Admin web, simulator and ESP-IDF firmware compile; host/API tests pass.
