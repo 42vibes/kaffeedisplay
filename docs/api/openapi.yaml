@@ -455,6 +455,10 @@ paths:
   /reports/{kind}:
     get:
       summary: Report data or CSV export
+      description: |
+        Period boundaries are calculated on the device in Europe/Berlin. For
+        `period=all`, the JSON envelope omits `from`/`to` because the range is
+        unbounded. JSON money cells are integer cents.
       parameters:
         - name: kind
           in: path
@@ -470,11 +474,11 @@ paths:
             default: month
         - name: from
           in: query
-          description: Unix seconds, required for custom
+          description: Unix seconds, required for custom; omitted for all
           schema: { type: integer, format: int64 }
         - name: to
           in: query
-          description: Unix seconds, exclusive
+          description: Unix seconds, exclusive; omitted for all
           schema: { type: integer, format: int64 }
         - name: format
           in: query
@@ -495,6 +499,17 @@ paths:
           headers:
             Content-Disposition:
               schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: Device time is unset for a bounded period
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Report generation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /settings:
     get:
       summary: All non-secret settings

@@ -1129,10 +1129,13 @@ nlohmann::json value_json(ColumnType type, const Value& value) {
 }  // namespace
 
 nlohmann::json to_json(const Ledger& ledger, ReportKind kind, const Period& p) {
-    nlohmann::json out{{"kind", report_kind_name(kind)},
-                       {"period", period_kind_name(p.kind)},
-                       {"from", p.from},
-                       {"to", p.to}};
+    nlohmann::json out{{"kind", report_kind_name(kind)}, {"period", period_kind_name(p.kind)}};
+    // All-time reports have no meaningful boundaries. The SPA treats missing
+    // from/to as "all time"; INT64_MAX would overflow JavaScript Date.
+    if (p.kind != PeriodKind::All) {
+        out["from"] = p.from;
+        out["to"] = p.to;
+    }
 
     const std::vector<Column>& table = columns(kind);
     nlohmann::json column_json = nlohmann::json::array();

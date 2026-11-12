@@ -811,6 +811,21 @@ TEST_CASE("JSON envelope matches the documented report shape") {
     CHECK(transactions.at("rows").at(0).at("timestamp").is_number_integer());
 }
 
+TEST_CASE("all-time JSON omits unbounded from/to") {
+    Scenario s;
+    const auto payload = to_json(s.ledger, ReportKind::Transactions, all());
+    CHECK(payload.at("kind") == "transactions");
+    CHECK(payload.at("period") == "all");
+    CHECK_FALSE(payload.contains("from"));
+    CHECK_FALSE(payload.contains("to"));
+    CHECK_FALSE(payload.at("rows").empty());
+
+    const auto month_payload = to_json(s.ledger, ReportKind::Overview, month(NOV_02));
+    CHECK(month_payload.contains("from"));
+    CHECK(month_payload.contains("to"));
+    CHECK(month_payload.at("to") == month(NOV_02).to);
+}
+
 TEST_CASE("golden CSV files for every report and format") {
     Scenario s;
     const Period november = month(NOV_02);

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   centsFromInput,
   formatBytes,
+  formatDateInZone,
+  formatDateTimeInZone,
   formatDuration,
   formatEuro,
   formatSignedEuro,
@@ -57,6 +59,14 @@ describe("money formatting", () => {
 
   it("builds a stable month key", () => {
     expect(monthKey(Date.UTC(2026, 10, 11) / 1000)).toBe("2026-11");
+  });
+
+  it("does not throw on sentinel or invalid timestamps", () => {
+    expect(formatDateInZone(Number.MAX_SAFE_INTEGER)).toBe("–");
+    expect(formatDateTimeInZone(Number.MAX_SAFE_INTEGER)).toBe("–");
+    expect(formatDateInZone(Number.NaN)).toBe("–");
+    expect(formatDateInZone(0)).toBe("01.01.1970");
+    expect(formatDateTimeInZone(0)).toBe("–");
   });
 });
 

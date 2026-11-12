@@ -24,7 +24,9 @@
 }
 ```
 
-- `from` is inclusive, `to` is exclusive, both Unix seconds.
+- `from` is inclusive, `to` is exclusive, both Unix seconds. For `period=all`
+  the envelope omits both fields because the range is unbounded (never emit
+  `INT64_MAX`, which overflows JavaScript `Date`).
 - Period boundaries are calculated by the device in `Europe/Berlin`
   (ISO week Mo–So). For `period=custom`, the SPA sends Berlin-midnight
   boundaries as `from`/`to`; `to` is the midnight after the selected end date.
