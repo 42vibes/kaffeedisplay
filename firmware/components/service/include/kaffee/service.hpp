@@ -175,10 +175,10 @@ class KaffeeService : public IUiBackend {
 
     // --- Admin operations ---
     virtual Result<Event> create_user(const std::string& name, const std::string& color,
-                                      const std::string& request_id) = 0;
+                                      const std::string& request_id, int avatar_id = 0) = 0;
     virtual Result<Event> update_user(const std::string& user_id, const std::string& name,
                                       const std::string& color, bool active,
-                                      const std::string& request_id) = 0;
+                                      const std::string& request_id, int avatar_id = -1) = 0;
     virtual Result<Event> archive_user(const std::string& user_id,
                                        const std::string& request_id) = 0;
     virtual Result<Event> create_product(const std::string& name, const std::string& category,
