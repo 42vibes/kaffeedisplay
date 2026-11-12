@@ -32,16 +32,18 @@ lv_obj_t* make_avatar(lv_obj_t* parent, const std::string& name, const std::stri
         lv_obj_set_scrollable(image, false);
 
         lv_obj_t* badge = lv_obj_create(circle);
-        lv_obj_set_size(badge, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(badge, 1, 0);
+        lv_obj_set_size(badge, 24, 18);
+        lv_obj_set_style_pad_all(badge, 0, 0);
         lv_obj_set_style_bg_color(badge, theme::color(theme::COLOR_BG), 0);
         lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(badge, 0, 0);
         lv_obj_set_style_radius(badge, 6, 0);
         lv_obj_set_scrollable(badge, false);
         lv_obj_set_clickable(badge, false);
-        theme::make_label(badge, initials(name).c_str(), theme::font_small(),
-                          theme::color(theme::COLOR_TEXT));
+        lv_obj_t* initials_label =
+            theme::make_label(badge, initials(name).c_str(), theme::font_small(),
+                              theme::color(theme::COLOR_TEXT));
+        lv_obj_center(initials_label);
         lv_obj_align(badge, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     } else {
         lv_obj_t* text = theme::make_label(circle, initials(name).c_str(),
