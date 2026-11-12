@@ -1,6 +1,6 @@
 # T-006 — LVGL simulator + screenshots + README
 
-Status: review
+Status: done
 Track: ui
 Owner: ui-agent
 Branch: `feat/T-004-ui`

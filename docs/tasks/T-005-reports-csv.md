@@ -1,6 +1,6 @@
 # T-005 — Reports + Excel-compatible CSV backend
 
-Status: review
+Status: done
 Track: backend
 Owner: agent T-006
 Branch: `feat/T-006-reports`

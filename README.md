@@ -13,7 +13,19 @@ A self-contained coffee fund kiosk for the **Guition ESP32-4848S040** (ESP32-S3,
 
 ## Status
 
-Early development. See `docs/` for architecture, task board and decisions.
+v1 is implemented and running on the real board:
+
+- 3-page German LVGL kiosk (booking, monthly leaderboard, system/AP/QR)
+- on-device admin backend: users, top-ups, products, expenses, cash count,
+  weekly/monthly/yearly reports, Excel-compatible CSV, backup/restore, OTA
+- post-pay member balances, guest cash sales, voids and audit trail
+- on-demand WLAN AP with captive DNS, first-boot setup password, QR codes
+- serial console for diagnostics/recovery (`status`, `ap`, `time`, `backup`,
+  `factory-reset`, `book`/`void` for HIL)
+- ESP-IDF 5.5, 16 MB flash / 8 MB PSRAM, ~2.78 MB app image
+
+Hardware checks still pending: touch corners at 0/90/180/270, frame rate during
+swipes, and dim/off/wake timing. See `docs/tasks/` for the live status.
 
 ## Screenshots
 
@@ -27,6 +39,16 @@ The device UI is 480×480, German, espresso-themed.
 | Statistik | System / WLAN-QR |
 |---|---|
 | ![Statistik](docs/ui/screenshots/04-leaderboard.png) | ![System](docs/ui/screenshots/05-system-ap-qr.png) |
+
+### Admin backend
+
+| Übersicht | Berichte |
+|---|---|
+| ![Admin dashboard](docs/ui/screenshots/web-dashboard.png) | ![Reports](docs/ui/screenshots/web-reports.png) |
+
+| Benutzer | Einstellungen |
+|---|---|
+| ![Users](docs/ui/screenshots/web-users.png) | ![Settings](docs/ui/screenshots/web-settings.png) |
 
 ## Quick start
 

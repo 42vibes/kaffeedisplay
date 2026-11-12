@@ -1,6 +1,6 @@
 # T-003 — Board bring-up + 3-page LVGL device UI
 
-Status: review (board + UI merged; integration and hardware verification pending)
+Status: done (board + UI merged; integration and hardware verification pending)
 Track: embedded
 Owner: board-agent / ui-agent
 Branches: `feat/T-003-board` (board), `feat/T-004-ui` (UI)

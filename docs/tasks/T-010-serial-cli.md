@@ -1,6 +1,6 @@
 # T-010 — Serial CLI and live AP validation
 
-Status: review
+Status: done
 Track: tooling / integration
 Owner: T-010 serial-cli agent
 Branch: `feat/T-010-serial-cli` (from `main` 4cd69bb)

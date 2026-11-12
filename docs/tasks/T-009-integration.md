@@ -1,6 +1,6 @@
 # T-009 — Firmware integration, reports, factory reset and boot
 
-Status: review
+Status: done
 Track: integration
 Owner: T-009 integration agent
 Branch: `feat/T-009-integration`
