@@ -342,8 +342,8 @@ esp_err_t handle_users_create(RequestContext& ctx) {
     Result<Cents> avatar = get_cents(*body.value, "avatar_id", false, 0, kMaxUserAvatarId);
     if (!avatar) return send_service_error(ctx.req, result_error(avatar));
 
-    Result<Event> event = ctx.server.service().create_user(
-        trimmed_name, user_color, ctx.request_id, static_cast<int>(*avatar.value));
+    const int avatar_id = static_cast<int>(*avatar.value);
+    auto event = ctx.server.service().create_user(trimmed_name, user_color, ctx.request_id, avatar_id);
     if (!event) return send_service_error(ctx.req, result_error(event));
     auto user = ctx.server.service().find_user(event.value->user_id);
     if (!user) return send_error(ctx.req, 500, "internal_error", "Benutzer nicht gefunden");
@@ -377,11 +377,9 @@ esp_err_t handle_users_update(RequestContext& ctx) {
     }
 
     // -1 means the PATCH did not mention the avatar: preserve the current choice.
-    const int avatar_id = body.value->contains("avatar_id")
-                              ? static_cast<int>(*avatar.value)
-                              : -1;
-    Result<Event> event = service.update_user(id, new_name, new_color, *active.value,
-                                              ctx.request_id, avatar_id);
+    const int avatar_id = body.value->contains("avatar_id") ? static_cast<int>(*avatar.value) : -1;
+    const bool is_active = *active.value;
+    auto event = service.update_user(id, new_name, new_color, is_active, ctx.request_id, avatar_id);
     if (!event) return send_service_error(ctx.req, result_error(event));
     auto updated = service.find_user(id);
     if (!updated) return send_error(ctx.req, 404, "not_found", "Benutzer nicht gefunden");
