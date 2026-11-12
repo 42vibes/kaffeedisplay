@@ -342,7 +342,9 @@ esp_err_t handle_users_create(RequestContext& ctx) {
     Result<Cents> avatar = get_cents(*body.value, "avatar_id", false, 0, kMaxUserAvatarId);
     if (!avatar) return send_service_error(ctx.req, result_error(avatar));
 
-    const int avatar_id = static_cast<int>(*avatar.value);
+    // Omitted avatar_id requests a random preset; an explicit zero uses initials.
+    const bool has_avatar = body.value->contains("avatar_id") && !(*body.value)["avatar_id"].is_null();
+    const int avatar_id = has_avatar ? static_cast<int>(*avatar.value) : -1;
     auto& service = ctx.server.service();
     auto event = service.create_user(trimmed_name, user_color, ctx.request_id, avatar_id);
     if (!event) return send_service_error(ctx.req, result_error(event));
