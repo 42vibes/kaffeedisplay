@@ -590,6 +590,10 @@ TEST_CASE("ap delegation and timeout clear sessions") {
     REQUIRE(static_cast<bool>(second));
     REQUIRE(static_cast<bool>(fixture.service->stop_ap()));
     CHECK(fixture.platform.ap_stops == 1);
+    // Session clearing is deferred to the listener callback, never done on the
+    // httpd or serial task that requested the stop.
+    CHECK(static_cast<bool>(fixture.service->validate_session(second.value->token)));
+    fixture.platform.simulate_ap_timeout();
     CHECK_FALSE(static_cast<bool>(fixture.service->validate_session(second.value->token)));
 }
 

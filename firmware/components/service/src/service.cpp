@@ -1152,15 +1152,10 @@ Result<Unit> KaffeeServiceImpl::start_ap() {
 }
 
 Result<Unit> KaffeeServiceImpl::stop_ap() {
-    // Call the platform without holding the service mutex: the platform may
-    // invoke the AP-stopped callback synchronously.
-    auto result = platform_.stop_ap();
-    if (result) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        sessions_.clear();
-        login_states_.clear();
-    }
-    return result;
+    // Do not touch session state from the caller (httpd/serial) task. The
+    // network listener calls on_ap_stopped() on its worker after the AP is
+    // confirmed down; that is the single deferred session-clear path.
+    return platform_.stop_ap();
 }
 
 Result<Unit> KaffeeServiceImpl::extend_ap(int seconds) {
