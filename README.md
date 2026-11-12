@@ -32,7 +32,7 @@ The device UI is 480×480, German, espresso-themed.
 
 The `feature/user-avatars` branch adds **30 distinct, illustrated Comic avatars**
 (Fuchs, Katze, Hund, Panda, Roboter, Kaffeetasse and many others).
-Each design is a static 40 × 40 pixel RGB565 bitmap in firmware flash, with
+Each design is a static 38 × 38 pixel RGB565 bitmap in firmware flash, with
 matching locally bundled web imagery. No image uploads, animations, network
 downloads or runtime decompression are involved. The device adds readable
 initials as a small badge, and preset `0` retains the original initials-only
