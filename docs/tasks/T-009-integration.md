@@ -74,8 +74,8 @@ login/`/auth/me` and renders a forced first-login change form before the shell.
   typed `WERKSRESET` confirmation; mock/e2e coverage added.
 - **LittleFS safety:** `format_if_mount_failed=false`. Only a genuinely blank
   partition is formatted once; a failed mount aborts the boot and leaves OTA
-  rollback armed. The mount policy is unit-tested and both paths were exercised
-  on hardware.
+  rollback armed. Only the blank-format path was proven on hardware; the
+  corrupt-refusal path is covered by the unit-tested mount policy and log path.
 - **Read-only reports:** `ledger_snapshot()` now returns
   `std::shared_ptr<const Ledger>` with the commit hook cleared.
 - **Settings atomicity:** `save_settings()` persists first and rolls back the
@@ -109,15 +109,16 @@ pre-upgrade 50k hash is a one-time 5.1 s (verification + transparent rehash).
 
 ## Evidence
 
-- `make test-host`: 136 test cases / 17,387 assertions, all pass (new tests:
+- `make test-host`: 138 test cases / 17,412 assertions, all pass (new tests:
   ledger snapshot, settings apply/rollback, factory reset, report JSON envelope,
   all-time report bounds, setup-password persistence/reload/clear/upgrade,
-  PBKDF2 iteration migration, LittleFS mount policy, UI strings).
+  PBKDF2 iteration migration, service/device stats, LittleFS mount policy,
+  UI strings).
 - `make test-web`: typecheck + 28 Vitest tests, including the forced first-login
   form and invalid timestamp formatting.
 - `make test-e2e`: 10 Playwright tests, including the typed factory-reset flow.
 - `make assets` + `make build-docker`: success with the real SPA
-  (3 assets, 120.4 KiB gzip; app image 0x2afd80 with 10% partition free).
+  (3 assets, 120.4 KiB gzip; app image 0x2afd90 with 10% partition free).
 - `make flash` on `/dev/ttyUSB0`, serial boot log confirms: storage mounted,
   UI started on page 1, network ready, AP started for provisioning, HTTP API
   started, `boot health ... => ok`, OTA image confirmed.
@@ -134,8 +135,10 @@ pre-upgrade 50k hash is a one-time 5.1 s (verification + transparent rehash).
   `/generate_204` 204; `/hotspot-detect.html` 302. Temp product creation was
   skipped after the host Wi-Fi link dropped; cleanup of the temporary user is
   pending on the board.
-- Temp product creation was skipped after the host Wi-Fi link dropped; one
-  temporary user remains on the board and cleanup is pending via the admin UI.
+- Live `/device` after mount: `storage_mounted=true`, `storage_used=258`,
+  `storage_total=9437184`; after `GET /backup`, `last_backup_at` changed from
+  `0` to `1794478175`. `drinks_today=0` is correct for the empty test ledger;
+  the host test covers a non-zero count (2 purchases).
 - HIL still needs the not-yet-implemented serial CLI.
 - Branch `feat/T-009-integration` is pushed. PR creation from this environment
   failed with `Resource not accessible by personal access token

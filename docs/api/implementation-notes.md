@@ -218,5 +218,9 @@ Other observations:
 - `GET /stats/leaderboard` only accepts `month`; with time unset it falls back to
   the last 30 days.
 - `/device` and `/summary` return a few extra diagnostics (allowed by the spec).
+- `GET /settings` returns the stored AP SSID override; when empty the device
+  derives `Kaffeekasse-XXXX` from the MAC. The effective SSID, AP password and
+  URL are available from `GET /ap` and `GET /device.network` while the AP is
+  active.
 - The login response carries the session only in the cookie; the body contains
   username, CSRF token and expiry.

@@ -97,7 +97,9 @@ export function App() {
     return (
       <FirstLoginPage
         onDone={() => {
-          void logout().catch(() => undefined);
+          // The API revokes the current token and clears the cookie on a
+          // successful password change; don't call logout() here or its 401
+          // would overwrite the "password changed" notice.
           setSession(null);
           setSessionState(null);
           setNotice(de.passwordChanged);
