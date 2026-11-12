@@ -129,6 +129,7 @@ export const de = {
   // users
   userAvatar: "Benutzerbild",
   userAvatarNone: "Nur Initialen",
+  userAvatarRandom: "Zufällig vergeben (Standard)",
   userAvatarPreset: "Motiv",
   searchUsers: "Benutzer suchen",
   showInactive: "Inaktive anzeigen",
