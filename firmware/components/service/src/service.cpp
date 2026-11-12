@@ -39,6 +39,18 @@ std::string make_id(IPlatform& platform, std::string_view prefix) {
     return std::string(prefix) + "_" + buffer;
 }
 
+// Pick a preset uniformly from 1..30, skipping the last created user's preset
+// when possible. Use the platform RNG; only the chosen ID enters the journal.
+int random_user_avatar(IPlatform& platform, const std::vector<User>& users) {
+    const int previous = users.empty() ? 0 : users.back().avatar_id;
+    const int available = previous >= 1 && previous <= kMaxUserAvatarId
+                              ? kMaxUserAvatarId - 1
+                              : kMaxUserAvatarId;
+    int selected = static_cast<int>(platform.random_u64() % available) + 1;
+    if (available != kMaxUserAvatarId && selected >= previous) ++selected;
+    return selected;
+}
+
 std::string random_hex(IPlatform& platform, size_t bytes) {
     static constexpr char kHex[] = "0123456789abcdef";
     std::string out;
@@ -591,7 +603,10 @@ Result<Event> KaffeeServiceImpl::create_user(const std::string& name, const std:
     return mutate([&]() -> Result<Event> {
         if (auto existing = existing_request_locked(request_id))
             return Result<Event>::ok(*existing);
-        return ledger_.create_user(name, color, request_id, now(), time_source(), avatar_id);
+        const int selected_avatar =
+            avatar_id == -1 ? random_user_avatar(platform_, ledger_.users()) : avatar_id;
+        return ledger_.create_user(name, color, request_id, now(), time_source(),
+                                   selected_avatar);
     });
 }
 
