@@ -52,8 +52,10 @@ fonts (Inter/Montserrat subset with umlauts and €), high contrast, big targets
 - Übersicht: Kassenstand, Guthaben, offene Beträge, Differenz, Verbrauch,
   Gastumsatz, Einzahlungen, Ausgaben; alerts (time, debts, backup, storage).
 - Benutzer: create/edit/archive, balance, payment (`Einzahlung`), adjustment,
-  history, and a 30-motif avatar picker. Only authenticated admins can change a
-  user's avatar; no upload or additional image decoder is required.
+  history, and a 30-motif avatar picker. New users get a random preset by
+  default, avoiding the previous new user's preset. Admins can manually choose
+  a preset or initials-only (ID 0); existing users keep their saved choice.
+  No upload or additional image decoder is required.
 - Getränke: add/edit/reorder/archive/delete, category, price, icon, colour.
 - Ausgaben: add/edit/void, categories, vendor, note.
 - Kassensturz: counted cash, expected, difference, history.
