@@ -32,9 +32,12 @@ The device UI is 480×480, German, espresso-themed.
 
 The `feature/user-avatars` branch adds **30 distinct, illustrated Comic avatars**
 (Fuchs, Katze, Hund, Panda, Roboter, Kaffeetasse and many others).
-Each design is a static 38 × 38 pixel RGB565 bitmap in firmware flash, with
-matching locally bundled web imagery. No image uploads, animations, network
-downloads or runtime decompression are involved. The device adds readable
+Each design is a static 38 × 38 pixel **I4 indexed image** in firmware
+flash, with a 16-colour palette and matching locally bundled web imagery.
+Each avatar needs only 786 bytes of artwork data instead of 2,888 bytes
+in RGB565 (23,580 versus 86,640 bytes for the full set before linkage).
+LVGL's built-in indexed image decoder renders them; no image uploads,
+network downloads, animation or custom decompressor is involved. The device adds readable
 initials as a small badge, and preset `0` retains the original initials-only
 display. In the compact web picker the artwork is unobscured.
 
