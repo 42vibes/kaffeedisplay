@@ -4,7 +4,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git cmake make g++ libsdl2-dev zlib1g-dev \
-    python3 xvfb x11vnc novnc websockify \
+    python3 xvfb x11vnc novnc websockify x11-utils x11-apps xdotool \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work
