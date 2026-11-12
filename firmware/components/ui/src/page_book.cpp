@@ -13,8 +13,8 @@ namespace {
 
 // Five palettes x six decorative motifs = 30 static, allocation-bounded presets.
 // These are simple LVGL objects: no image decoder, font assets, or animation timer.
-lv_obj_t* make_avatar(lv_obj_t* parent, const std::string& name, const std::string& color,
-                      int size, int avatar_id = 0) {
+lv_obj_t* make_avatar(lv_obj_t* parent, const std::string& name, const std::string& color, int size,
+                      int avatar_id = 0) {
     static constexpr uint32_t palette[] = {
         0xD4A373, 0x8FBC8F, 0x7FA7C9, 0xC9A0DC, 0xE07A5F,
     };
@@ -40,14 +40,22 @@ lv_obj_t* make_avatar(lv_obj_t* parent, const std::string& name, const std::stri
             lv_obj_set_style_pad_all(obj, 0, 0);
         };
         switch (motif) {
-            case 0: mark(offset, offset, unit, unit, true); break;
-            case 1: mark(size - offset - unit, offset, unit, unit, true); break;
+            case 0:
+                mark(offset, offset, unit, unit, true);
+                break;
+            case 1:
+                mark(size - offset - unit, offset, unit, unit, true);
+                break;
             case 2:
                 mark(offset, size - offset - unit, unit, unit, true);
                 mark(size - offset - unit, offset, unit, unit, true);
                 break;
-            case 3: mark(offset, offset, unit * 2, std::max(3, unit / 2), false); break;
-            case 4: mark(size - offset - unit, size - offset - unit, unit, unit, true); break;
+            case 3:
+                mark(offset, offset, unit * 2, std::max(3, unit / 2), false);
+                break;
+            case 4:
+                mark(size - offset - unit, size - offset - unit, unit, unit, true);
+                break;
             default:
                 mark(offset, offset, unit, unit, true);
                 mark(size - offset - unit, size - offset - unit, unit, unit, true);
@@ -108,9 +116,11 @@ void UiAppImpl::refresh_book_page() {
         lv_obj_set_style_pad_all(card, 10, 0);
         lv_obj_set_style_pad_column(card, 10, 0);
 
-        lv_obj_t* avatar = guest_mode_ ? make_avatar(card, strings::BOOK_GUEST, "#D4A373", 46)
-                                       : make_avatar(card, user->name, user->color, 46, user->avatar_id);
-        (void)avatar;
+        if (guest_mode_) {
+            make_avatar(card, strings::BOOK_GUEST, "#D4A373", 46);
+        } else {
+            make_avatar(card, user->name, user->color, 46, user->avatar_id);
+        }
 
         lv_obj_t* names = theme::make_column(card, 0);
         lv_obj_set_width(names, LV_SIZE_CONTENT);
