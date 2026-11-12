@@ -1,0 +1,6 @@
+﻿sep=;
+Zeitpunkt;Kategorie;Beschreibung;Lieferant;Betrag (EUR);Betrag (Cent);Status;Notiz;Zeitqualität
+06.11.2026 08:30:00;Einkauf;Milch;Rewe;-3,00;-300;erfasst;;synchronisiert
+21.11.2026 13:00:00;Einkauf;Milch;Rewe;-1,00;-100;geändert;;synchronisiert
+22.11.2026 14:00:00;Service;Maschine;Service24;-8,00;-800;storniert;;synchronisiert
+23.11.2026 15:00:00;Service;Maschine;Service24;8,00;800;Storno;Falsch gebucht;synchronisiert

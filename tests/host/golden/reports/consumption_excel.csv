@@ -1,0 +1,6 @@
+﻿sep=;
+Art;Mitglied;Produkt;Kategorie;Anzahl;Betrag (EUR);Betrag (Cent);Stornos
+Mitglied;Ada;Tee;Tee;0;0,00;0;1
+Mitglied;Ben;Tee;Tee;1;0,80;80;0
+Gast;;Kaffee;Kaffee;1;0,50;50;0
+Gast;;Tee;Tee;1;0,80;80;0

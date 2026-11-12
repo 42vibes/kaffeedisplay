@@ -18,12 +18,15 @@ endif()
 set(DOMAIN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/domain)
 set(STORAGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/storage)
 set(SERVICE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/service)
+set(REPORTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/reports)
 
 add_executable(kaffee_tests
+  doctest_main.cpp
   domain_test.cpp
   storage_test.cpp
   service_test.cpp
   auth_test.cpp
+  reports_test.cpp
   ${DOMAIN_DIR}/src/domain.cpp
   ${DOMAIN_DIR}/src/json.cpp
   ${DOMAIN_DIR}/src/sha256.cpp
@@ -31,6 +34,7 @@ add_executable(kaffee_tests
   ${STORAGE_DIR}/src/file_store.cpp
   ${SERVICE_DIR}/src/auth.cpp
   ${SERVICE_DIR}/src/service.cpp
+  ${REPORTS_DIR}/src/reports.cpp
 )
 
 target_include_directories(kaffee_tests PRIVATE
@@ -38,11 +42,13 @@ target_include_directories(kaffee_tests PRIVATE
   ${DOMAIN_DIR}/third_party
   ${STORAGE_DIR}/include
   ${SERVICE_DIR}/include
+  ${REPORTS_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
+)
+
+target_compile_definitions(kaffee_tests PRIVATE
+  GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
 )
 
 find_package(Threads REQUIRED)
 target_link_libraries(kaffee_tests PRIVATE Threads::Threads)
-
-set_source_files_properties(domain_test.cpp PROPERTIES COMPILE_DEFINITIONS
-  "DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN")

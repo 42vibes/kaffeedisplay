@@ -1,0 +1,5 @@
+kind,user,product,category,count,amount_eur,amount_cents,corrections
+Mitglied,Ada,Tee,Tee,0,0.00,0,1
+Mitglied,Ben,Tee,Tee,1,0.80,80,0
+Gast,,Kaffee,Kaffee,1,0.50,50,0
+Gast,,Tee,Tee,1,0.80,80,0

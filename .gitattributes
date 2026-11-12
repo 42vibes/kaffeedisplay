@@ -1,0 +1,3 @@
+# Golden report fixtures are byte-exact. The Excel variants start with a UTF-8
+# BOM and use CRLF, raw variants use LF. Never let Git normalize them.
+tests/host/golden/reports/*.csv -text
