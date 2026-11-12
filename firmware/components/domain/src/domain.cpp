@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <mutex>
 #include <random>
 
 #include "kaffee/json.hpp"
@@ -30,10 +31,21 @@ std::string compact_id(std::string_view prefix, uint64_t value) {
 
 // Host/test-only fallback generator. Device code must pass an IdFn backed by
 // IPlatform::random_u64() to Ledger (see docs/adr/0011-id-generation.md).
+//
+// The engine is deliberately NOT thread_local: a 2.5 KB TLS block is
+// instantiated on every task stack, including the tiny IDF IPC tasks, and
+// overruns them before app_main (ready-list corruption in the scheduler). A
+// process-wide engine behind a mutex keeps host tests race-free without TLS.
 std::string default_id(std::string_view prefix) {
-    static thread_local std::mt19937_64 rng{std::random_device{}()};
+    static std::mutex rng_mutex;
+    static std::mt19937_64 rng{std::random_device{}()};
     static std::atomic<uint64_t> counter{0};
-    return compact_id(prefix, rng() ^ (counter.fetch_add(1) * 0x9e3779b97f4a7c15ull));
+    uint64_t random = 0;
+    {
+        std::lock_guard<std::mutex> lock(rng_mutex);
+        random = rng();
+    }
+    return compact_id(prefix, random ^ (counter.fetch_add(1) * 0x9e3779b97f4a7c15ull));
 }
 
 Ledger::Ledger() : id_fn_([](std::string_view prefix) { return default_id(prefix); }) {}

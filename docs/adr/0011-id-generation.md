@@ -23,7 +23,9 @@ The prefix identifies the entity (`evt`, `usr`, `prd`, `exp`, `cash`).
 - ID format is `<prefix>_<16 lowercase hex chars>` (64 random bits).
 - `Ledger()`'s default generator (`default_id`) is **host/test only**. It uses
   `std::random_device`/`mt19937_64` and exists for host unit tests and the
-  simulator. Device code must not rely on it.
+  simulator. Device code must not rely on it. The engine is process-wide behind
+  a mutex, not `thread_local`: a 2.5 KB TLS block would be instantiated on every
+  task stack and overruns the small IDF IPC task stacks before `app_main`.
 - `KaffeeService` constructs its `Ledger` with an `IdFn` backed by
   `IPlatform::random_u64()`, formatting the value as exactly 16 hex characters
   after the prefix:
