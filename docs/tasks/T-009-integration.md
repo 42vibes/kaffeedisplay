@@ -60,7 +60,8 @@ and STA setup now set the mode first.
 - `make flash` on `/dev/ttyUSB0`, serial boot log confirms: storage mounted,
   UI started on page 1, network ready, AP started for provisioning, HTTP API
   started, `boot health ... => ok`, OTA image confirmed.
-- Serial boot log: `/tmp/opencode/boot4.log` from the integration run.
+- Serial boot log: `/tmp/opencode/boot-final.log` from the final integration
+  image.
 - Host has no Wi-Fi interface, so the API could not be exercised over the AP
   from this machine; HIL also needs the not-yet-implemented serial CLI.
 - Branch `feat/T-009-integration` is pushed. PR creation from this environment
