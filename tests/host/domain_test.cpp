@@ -315,8 +315,8 @@ TEST_CASE("invalid avatar ids do not enter the journal") {
     Fixture f;
     auto id = f.user("Ada");
     const size_t old_events = f.persisted.size();
-    auto invalid = f.ledger.update_user(id, "Ada", "#fff", true, "invalid", f.now,
-                                        TimeSource::Synced, 31);
+    const auto source = TimeSource::Synced;
+    auto invalid = f.ledger.update_user(id, "Ada", "#fff", true, "invalid", f.now, source, 31);
     CHECK_FALSE(static_cast<bool>(invalid));
     CHECK(f.persisted.size() == old_events);
     CHECK(f.ledger.find_user(id)->avatar_id == 0);
