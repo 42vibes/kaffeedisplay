@@ -700,7 +700,9 @@ TEST_CASE("backup excludes secrets and restores state") {
     std::unique_ptr<KaffeeService> other = std::move(*created.value);
 
     auto restored = other->import_backup(*backup.value, "restore-1");
-    INFO(restored.error ? restored.error->message : "backup restore succeeded");
+    const std::string restore_diagnostic =
+        restored.error ? restored.error->message : "backup restore succeeded";
+    INFO(restore_diagnostic);
     REQUIRE(static_cast<bool>(restored));
     CHECK(other->users().size() == fixture.service->users().size());
     CHECK(other->products().size() == fixture.service->products().size());
