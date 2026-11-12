@@ -12,9 +12,10 @@ FakeBackend::FakeBackend() {
 void FakeBackend::seed() {
     const kaffee::Timestamp created = now_ - 86400 * 20;
 
-    auto add_user = [&](const char* name, const char* color, kaffee::Cents topup) {
+    // Vary the preset IDs for screenshots; keep one initials-only user as fallback.
+    auto add_user = [&](const char* name, const char* color, kaffee::Cents topup, int avatar_id) {
         auto event = ledger_.create_user(name, color, std::string("seed-user-") + name, created,
-                                         kaffee::TimeSource::Synced);
+                                         kaffee::TimeSource::Synced, avatar_id);
         std::string id = event.value ? event.value->user_id : std::string();
         if (topup > 0 && !id.empty()) {
             ledger_.topup(id, topup, "Startguthaben", std::string("seed-topup-") + name,
@@ -23,11 +24,11 @@ void FakeBackend::seed() {
         return id;
     };
 
-    const std::string anna = add_user("Anna", "#D4A373", 2000);
-    const std::string ben = add_user("Ben", "#8FBC8F", 1000);
-    const std::string clara = add_user("Clara", "#7FA6D9", 500);
-    const std::string david = add_user("David", "#D98F8F", 0);
-    const std::string emma = add_user("Emma", "#C9A0DC", 1500);
+    const std::string anna = add_user("Anna", "#D4A373", 2000, 1);
+    const std::string ben = add_user("Ben", "#8FBC8F", 1000, 8);
+    const std::string clara = add_user("Clara", "#7FA6D9", 500, 15);
+    const std::string david = add_user("David", "#D98F8F", 0, 22);
+    const std::string emma = add_user("Emma", "#C9A0DC", 1500, 0);
 
     auto add_product = [&](const char* name, const char* category, const char* icon,
                            const char* color, kaffee::Cents price, int sort) {
