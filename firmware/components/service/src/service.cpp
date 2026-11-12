@@ -130,8 +130,8 @@ class KaffeeServiceImpl final : public KaffeeService {
     Result<Event> create_user(const std::string& name, const std::string& color,
                               const std::string& request_id, int avatar_id) override;
     Result<Event> update_user(const std::string& user_id, const std::string& name,
-                              const std::string& color, bool active,
-                              const std::string& request_id, int avatar_id) override;
+                              const std::string& color, bool active, const std::string& request_id,
+                              int avatar_id) override;
     Result<Event> archive_user(const std::string& user_id, const std::string& request_id) override;
     Result<Event> create_product(const std::string& name, const std::string& category,
                                  const std::string& icon, const std::string& color,
