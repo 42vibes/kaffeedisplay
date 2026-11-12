@@ -174,6 +174,10 @@ Result<Event> Ledger::commit_event(Event event, std::string request_id) {
 
 Result<Unit> Ledger::validate_event(const Event& event) const {
     // Validate everything that can fail before mutating state.
+    if ((event.type == EventType::UserCreated || event.type == EventType::UserUpdated ||
+         event.type == EventType::UserArchived) &&
+        (event.user_avatar_id < 0 || event.user_avatar_id > kMaxUserAvatarId))
+        return Result<Unit>::fail("avatar", "invalid user avatar id");
     //
     // Event IDs must be unique across the whole ledger. Checking this here (and
     // not only in apply()) guarantees that commit_event never invokes the
@@ -312,6 +316,7 @@ Result<Unit> Ledger::apply(const Event& event) {
             u.id = event.user_id;
             u.name = event.user_name;
             u.color = event.user_color;
+            u.avatar_id = event.user_avatar_id;
             u.active = event.user_active;
             u.created_at = event.ts;
             user_index_[u.id] = users_.size();
@@ -324,6 +329,7 @@ Result<Unit> Ledger::apply(const Event& event) {
             User& u = users_[user_index_.at(event.user_id)];
             u.name = event.user_name;
             u.color = event.user_color;
+            u.avatar_id = event.user_avatar_id;
             u.active = event.user_active;
             if (!u.active)
                 u.archived_at = event.ts;
@@ -503,7 +509,7 @@ void Ledger::reset() {
 }
 
 Result<Event> Ledger::create_user(std::string name, std::string color, std::string request_id,
-                                  Timestamp ts, TimeSource source) {
+                                  Timestamp ts, TimeSource source, int avatar_id) {
     if (name.empty()) return fail("name", "name is required");
     Event e;
     e.type = EventType::UserCreated;
@@ -513,13 +519,14 @@ Result<Event> Ledger::create_user(std::string name, std::string color, std::stri
     e.user_id = id_fn_("usr");
     e.user_name = std::move(name);
     e.user_color = std::move(color);
+    e.user_avatar_id = avatar_id;
     e.user_active = true;
     return commit_event(std::move(e), std::move(request_id));
 }
 
 Result<Event> Ledger::update_user(std::string user_id, std::string name, std::string color,
                                   bool active, std::string request_id, Timestamp ts,
-                                  TimeSource source) {
+                                  TimeSource source, int avatar_id) {
     auto it = user_index_.find(user_id);
     if (it == user_index_.end()) return fail("user", "unknown user");
     if (name.empty()) return fail("name", "name is required");
@@ -531,6 +538,7 @@ Result<Event> Ledger::update_user(std::string user_id, std::string name, std::st
     e.user_id = std::move(user_id);
     e.user_name = std::move(name);
     e.user_color = std::move(color);
+    e.user_avatar_id = avatar_id < 0 ? users_[it->second].avatar_id : avatar_id;
     e.user_active = active;
     return commit_event(std::move(e), std::move(request_id));
 }

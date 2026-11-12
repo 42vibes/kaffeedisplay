@@ -4,6 +4,7 @@ export interface User {
   id: string;
   name: string;
   color: string;
+  avatar_id?: number;
   active: boolean;
   created_at: number;
   archived_at?: number;
@@ -17,6 +18,7 @@ export interface UserWithBalance extends User {
 export interface UserInput {
   name: string;
   color?: string;
+  avatar_id?: number;
   active?: boolean;
 }
 

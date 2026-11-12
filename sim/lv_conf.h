@@ -11,6 +11,9 @@
 #define LV_DEF_REFR_PERIOD 16
 #define LV_DPI_DEF 130
 
+// I4 image palettes use ARGB8888 in LVGL 9.6.
+#define LV_DRAW_SW_SUPPORT_ARGB8888 1
+
 #define LV_USE_QRCODE 1
 #define LV_USE_FLEX 1
 #define LV_USE_GRID 1

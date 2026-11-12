@@ -45,12 +45,21 @@ test("creates a user", async ({ page }) => {
 
   const name = `Testuser ${Date.now()}`;
   const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Zufällig vergeben (Standard)" })).toHaveAttribute("aria-pressed", "true");
+  const post = page.waitForRequest((request) =>
+    request.url().endsWith("/api/v1/users") && request.method() === "POST",
+  );
   await dialog.getByLabel("Name").fill(name);
   await dialog.getByRole("button", { name: "Speichern" }).click();
+  expect((await post).postDataJSON()).not.toHaveProperty("avatar_id");
 
   await expect(page.getByText("Benutzer angelegt.")).toBeVisible();
   const card = page.getByRole("listitem").filter({ hasText: name });
   await expect(card).toBeVisible();
+  const firstCreated = (await (await page.request.get(`${MOCK}/users`)).json())
+    .find((candidate: { name: string }) => candidate.name === name);
+  expect(firstCreated.avatar_id).toBeGreaterThanOrEqual(1);
+  expect(firstCreated.avatar_id).toBeLessThanOrEqual(30);
 
   await card.getByRole("button", { name: "Archivieren" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Archivieren" }).click();
@@ -59,6 +68,27 @@ test("creates a user", async ({ page }) => {
   await expect(card).toBeVisible();
   await card.getByRole("button", { name: "Wiederherstellen" }).click();
   await expect(page.getByText("Benutzer wiederhergestellt.")).toBeVisible();
+});
+
+test("admin can explicitly select initials-only or a preset for new users", async ({ page }) => {
+  await login(page);
+  await page.goto("/users");
+
+  await page.getByRole("button", { name: "Benutzer anlegen" }).click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name").fill("Only Initials");
+  await dialog.getByRole("button", { name: "Nur Initialen" }).click();
+  await dialog.getByRole("button", { name: "Speichern" }).click();
+  let result = await (await page.request.get(`${MOCK}/users`)).json();
+  expect(result.find((u: { name: string }) => u.name === "Only Initials")?.avatar_id).toBe(0);
+
+  await page.getByRole("button", { name: "Benutzer anlegen" }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name").fill("Chosen Avatar");
+  await dialog.getByRole("button", { name: "Motiv 17" }).click();
+  await dialog.getByRole("button", { name: "Speichern" }).click();
+  result = await (await page.request.get(`${MOCK}/users`)).json();
+  expect(result.find((u: { name: string }) => u.name === "Chosen Avatar")?.avatar_id).toBe(17);
 });
 
 test("records a topup for a member", async ({ page }) => {

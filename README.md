@@ -50,6 +50,70 @@ The device UI is 480×480, German, espresso-themed.
 |---|---|
 | ![Users](docs/ui/screenshots/web-users.png) | ![Settings](docs/ui/screenshots/web-settings.png) |
 
+## Optional user avatars
+
+This feature adds **30 distinct, illustrated Comic avatars**
+(Fuchs, Katze, Hund, Panda, Roboter, Kaffeetasse and many others).
+Each design is a static 38 × 38 pixel **I4 indexed image** in firmware
+flash, with a 16-colour palette and matching locally bundled web imagery.
+Each avatar needs only 786 bytes of artwork data instead of 2,888 bytes
+in RGB565 (23,580 versus 86,640 bytes for the full set before linkage).
+LVGL's built-in indexed image decoder renders them; no image uploads,
+network downloads, animation or custom decompressor is involved. The device adds readable
+initials as a small badge, and preset `0` retains the original initials-only
+display. In the compact web picker the artwork is unobscured.
+
+**New users automatically receive a random preset (1–30)** on creation.
+The server avoids giving two consecutively created users the same preset.
+This also works when users are created through the admin API, not just the web
+form. The avatar stays fixed after creation; it does not change on each login
+or restart. No additional action from the administrator is needed.
+
+The admin can override the automatically assigned avatar under
+**Benutzer → Bearbeiten → Benutzerbild** or explicitly select
+**Nur Initialen**. The create dialog defaults to **Zufällig vergeben**;
+choosing a specific motif or initials-only overrides that default.
+Avatar changes are only available through the authenticated admin web interface,
+and saved selections survive restarts and backups.
+
+| Neuen Benutzer anlegen: Zufällig vergeben | Neuer Benutzer: Avatar automatisch gesetzt |
+|---|---|
+| ![Default random avatar assignment in the create-user form](docs/ui/screenshots/web-avatar-picker.png) | ![New member receives a random preset](docs/ui/screenshots/web-user-random-avatar.png) |
+Existing users require no migration.
+
+**Preview:** The booking and selected-user screenshots above are generated from
+the simulator with preset avatars for Anna, Ben, Clara and David, while Emma
+demonstrates the initials-only fallback. The admin's user list is shown under
+[admin screenshots](docs/ui/screenshots/README.md#admin-web).
+See [UI specification](docs/ui.md) and
+[ADR 0014](docs/adr/0014-user-avatar-presets.md) for technical details.
+
+The illustration source is `assets/avatar_pack/part*.txt`; run
+`python3 tools/generate_avatar_art.py` to regenerate the checked-in firmware
+bitmap header and web art module. The source pack contains the fixed designs;
+it is not an upload feature.
+
+> Screenshot images must be regenerated and committed alongside any visible UI
+> change. After editing the LVGL view, run `make screenshots` and
+> `make screenshots-check`; for admin changes run
+> `npm --prefix web run screenshots`. Keep the preview images in the same
+> change as the UI implementation.
+
+## Preview in Docker (no host installation)
+
+Use the actual LVGL display and the separate admin test UI **from your browser**:
+
+```sh
+docker compose -f compose.preview.yml up --build
+```
+
+- Device display (noVNC): http://localhost:6080/vnc.html?autoconnect=1
+- Admin interface: http://localhost:5173 (mock password `kaffee`)
+
+Both previews run in containers. The simulator and the admin mock have separate
+demo datasets. See [container preview guide](docs/container-preview.md) for
+details and limitations.
+
 ## Quick start
 
 ```sh
@@ -85,6 +149,7 @@ make flash
 | `docs/api/openapi.yaml` | Admin REST contract |
 | `docs/api/reports.md` | Expected report JSON payload shape and CSV conventions |
 | `docs/ui.md` | Device and admin UI specification |
+| `docs/container-preview.md` | Browser-based Docker device/admin previews |
 | `docs/security.md` | Threat model, auth, AP policy |
 | `docs/operations.md` | Provisioning, backup, OTA, recovery |
 | `docs/serial-cli.md` | Serial protocol, clock/backup/reset commands |
