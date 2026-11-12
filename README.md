@@ -30,10 +30,13 @@ The device UI is 480×480, German, espresso-themed.
 
 ## Optional user avatars (feature branch)
 
-The `feature/user-avatars` branch adds **30 built-in, static avatar presets**
-to help identify coffee members. A member's initials remain legible on each
-avatar, and preset `0` retains the original coloured-initials display.
-The presets are drawn with small LVGL shapes rather than uploaded images.
+The `feature/user-avatars` branch adds **30 distinct, illustrated Comic avatars**
+(Fuchs, Katze, Hund, Panda, Roboter, Kaffeetasse and many others).
+Each design is a static 40 × 40 pixel RGB565 bitmap in firmware flash, with
+matching locally bundled web imagery. No image uploads, animations, network
+downloads or runtime decompression are involved. The device adds readable
+initials as a small badge, and preset `0` retains the original initials-only
+display. In the compact web picker the artwork is unobscured.
 
 **New users automatically receive a random preset (1–30)** on creation.
 The server avoids giving two consecutively created users the same preset.
@@ -59,6 +62,11 @@ demonstrates the initials-only fallback. The admin's user list is shown under
 [admin screenshots](docs/ui/screenshots/README.md#admin-web).
 See [UI specification](docs/ui.md) and
 [ADR 0014](docs/adr/0014-user-avatar-presets.md) for technical details.
+
+The illustration source is `assets/avatar_pack/part*.txt`; run
+`python3 tools/generate_avatar_art.py` to regenerate the checked-in firmware
+bitmap header and web art module. The source pack contains the fixed designs;
+it is not an upload feature.
 
 > Screenshot images must be regenerated and committed alongside any visible UI
 > change. After editing the LVGL view, run `make screenshots` and
