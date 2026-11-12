@@ -240,7 +240,8 @@ function UserFormDialog({
 }) {
   const [name, setName] = useState(user?.name ?? "");
   const [color, setColor] = useState(user?.color ?? colors[0]);
-  const [avatarId, setAvatarId] = useState(user?.avatar_id ?? 0);
+  // null means the server chooses a random avatar when creating a user.
+  const [avatarId, setAvatarId] = useState<number | null>(user ? (user.avatar_id ?? 0) : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const writeId = useWriteId();
@@ -255,9 +256,12 @@ function UserFormDialog({
     setError("");
     try {
       if (user) {
-        await api.updateUser(user.id, { name: name.trim(), color, avatar_id: avatarId }, writeId.id);
+        await api.updateUser(user.id, { name: name.trim(), color, avatar_id: avatarId ?? 0 }, writeId.id);
       } else {
-        await api.createUser({ name: name.trim(), color, avatar_id: avatarId }, writeId.id);
+        await api.createUser(
+          { name: name.trim(), color, ...(avatarId === null ? {} : { avatar_id: avatarId }) },
+          writeId.id,
+        );
       }
       writeId.renew();
       onSaved();
@@ -320,6 +324,16 @@ function UserFormDialog({
         </div>
         <fieldset className="space-y-2">
           <legend className="label">{de.userAvatar}</legend>
+          {!user ? (
+            <button
+              type="button"
+              className={`mb-2 flex min-h-10 w-full items-center justify-center rounded-lg border px-3 py-2 text-sm ${avatarId === null ? "border-cream-50" : "border-cream-100/20"}`}
+              aria-pressed={avatarId === null}
+              onClick={() => setAvatarId(null)}
+            >
+              {de.userAvatarRandom}
+            </button>
+          ) : null}
           <div className="grid grid-cols-5 gap-2 sm:grid-cols-6">
             {Array.from({ length: 31 }, (_, id) => (
               <button
