@@ -694,6 +694,9 @@ TEST_CASE("backup excludes secrets and restores state") {
     MemorySettingsStore other_settings;
     FakePlatform other_platform;
     configure_platform(other_platform);
+    // Model a second physical device with its own RNG state: otherwise the
+    // deterministic test RNG can recycle an imported event ID for the restore audit.
+    other_platform.rng = 0x8ac723d52b1f904eull;
     other_platform.time.now = kNow + 500;
     auto created = KaffeeService::create(other_store, other_settings, other_platform);
     REQUIRE(static_cast<bool>(created));
