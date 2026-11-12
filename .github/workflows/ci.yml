@@ -86,6 +86,12 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y clang-format
       - run: make fmt-check
+      - name: Validate I4 palette layout and matching admin artwork
+        run: python3 tools/check_avatar_i4.py
+      - name: Confirm generated I4 files match their checked-in source
+        run: |
+          python3 tools/generate_avatar_art.py
+          git diff --exit-code -- firmware/components/ui/src/avatar_art_generated.hpp web/src/components/avatarArt.generated.ts
 
   simulator:
     runs-on: ubuntu-24.04
