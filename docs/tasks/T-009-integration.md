@@ -63,6 +63,9 @@ and STA setup now set the mode first.
 - Serial boot log: `/tmp/opencode/boot4.log` from the integration run.
 - Host has no Wi-Fi interface, so the API could not be exercised over the AP
   from this machine; HIL also needs the not-yet-implemented serial CLI.
+- Branch `feat/T-009-integration` is pushed. PR creation from this environment
+  failed with `Resource not accessible by personal access token
+  (createPullRequest)`; open the PR manually from the pushed branch.
 
 ## Remaining hardware checks (owner)
 
