@@ -799,5 +799,41 @@ bool contains_secret_marker(std::string_view line) {
     return false;
 }
 
+nlohmann::json time_info_json(const TimeInfo& time) {
+    return nlohmann::json{{"now", time.now},
+                          {"source", Ledger::time_source_name(time.source)},
+                          {"last_sync", time.last_sync},
+                          {"last_source", time.last_source},
+                          {"trusted", time.trusted}};
+}
+
+nlohmann::json device_status_json(const SystemStats& stats) {
+    nlohmann::json network{{"ap_active", stats.network.ap_active},
+                           {"ap_starting", stats.network.ap_starting},
+                           {"ap_remaining_s", stats.network.ap_remaining_s},
+                           {"ap_ssid", stats.network.ap_ssid},
+                           {"ap_ip", stats.network.ap_ip},
+                           {"sta_connected", stats.network.sta_connected},
+                           {"sta_ip", stats.network.sta_ip},
+                           {"sta_rssi", stats.network.sta_rssi}};
+    return nlohmann::json{{"firmware_version", stats.firmware_version},
+                          {"build_date", stats.build_date},
+                          {"uptime_s", stats.uptime_s},
+                          {"free_heap", stats.free_heap},
+                          {"min_free_heap", stats.min_free_heap},
+                          {"free_psram", stats.free_psram},
+                          {"storage_used", stats.storage.used_bytes},
+                          {"storage_total", stats.storage.total_bytes},
+                          {"storage_mounted", stats.storage.mounted},
+                          {"storage_degraded", stats.storage.degraded},
+                          {"temperature_c", stats.chip_temperature_c},
+                          {"temperature_valid", stats.temperature_valid},
+                          {"mac", stats.mac},
+                          {"network", std::move(network)},
+                          {"time", time_info_json(stats.time)},
+                          {"last_backup_at", stats.last_backup_at},
+                          {"drinks_today", stats.drinks_today}};
+}
+
 }  // namespace api
 }  // namespace kaffee

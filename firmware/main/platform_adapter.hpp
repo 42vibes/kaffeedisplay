@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <string>
 
@@ -51,7 +52,7 @@ class PlatformAdapter final : public IPlatform {
     EspDisplay& display_;
     NetworkManager& network_;
     std::function<void()> ap_stopped_callback_;
-    bool ap_active_ = false;
+    std::atomic<bool> ap_active_{false};
 };
 
 }  // namespace kaffee

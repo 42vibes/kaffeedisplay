@@ -829,6 +829,26 @@ TEST_CASE("failed network apply rolls back settings") {
     CHECK(fixture.platform.network_settings.ap_ssid == before.network.ap_ssid);
 }
 
+TEST_CASE("service stats include storage, backup and drinks") {
+    ServiceFixture fixture(true);
+    const std::string user_id = fixture.user("Ada");
+    const std::string product_id = fixture.product("Kaffee", 50);
+    REQUIRE(static_cast<bool>(fixture.service->purchase(user_id, product_id, "stats-1")));
+    REQUIRE(static_cast<bool>(fixture.service->purchase(user_id, product_id, "stats-2")));
+
+    const SystemStats before = fixture.service->stats();
+    CHECK(before.storage.mounted);
+    CHECK(before.storage.total_bytes > 0);
+    CHECK(before.drinks_today == 2);
+    CHECK(before.last_backup_at == 0);
+
+    REQUIRE(static_cast<bool>(fixture.service->export_backup()));
+    const SystemStats after = fixture.service->stats();
+    CHECK(after.last_backup_at == kNow);
+    CHECK(after.storage.used_bytes > 0);
+    CHECK(after.drinks_today == 2);
+}
+
 TEST_CASE("factory reset clears storage, settings and sessions") {
     ServiceFixture fixture(true);
     fixture.user("Ada");

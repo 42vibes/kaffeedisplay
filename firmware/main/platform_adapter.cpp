@@ -111,8 +111,7 @@ void PlatformAdapter::set_ap_stopped_callback(std::function<void()> callback) {
 }
 
 void PlatformAdapter::set_ap_active(bool active) {
-    if (ap_active_ == active) return;
-    ap_active_ = active;
+    if (ap_active_.exchange(active) == active) return;
     display_.set_stay_awake(active);
 }
 

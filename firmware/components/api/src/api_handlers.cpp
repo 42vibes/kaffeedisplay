@@ -153,14 +153,6 @@ bool validate_settings(const Settings& settings, const Settings& base, Error& er
 
 // --- Response builders ---------------------------------------------------
 
-json time_info_json(const TimeInfo& time) {
-    return json{{"now", time.now},
-                {"source", Ledger::time_source_name(time.source)},
-                {"last_sync", time.last_sync},
-                {"last_source", time.last_source},
-                {"trusted", time.trusted}};
-}
-
 json ap_status_json(const NetworkStatus& network) {
     const std::string ip =
         network.ap_ip.empty() ? (network.ap_active ? "192.168.4.1" : "") : network.ap_ip;
@@ -184,34 +176,6 @@ json ap_status_json(const NetworkStatus& network) {
         status["url_qr"] = "";
     }
     return status;
-}
-
-json device_status_json(const SystemStats& stats) {
-    json network{{"ap_active", stats.network.ap_active},
-                 {"ap_starting", stats.network.ap_starting},
-                 {"ap_remaining_s", stats.network.ap_remaining_s},
-                 {"ap_ssid", stats.network.ap_ssid},
-                 {"ap_ip", stats.network.ap_ip},
-                 {"sta_connected", stats.network.sta_connected},
-                 {"sta_ip", stats.network.sta_ip},
-                 {"sta_rssi", stats.network.sta_rssi}};
-    return json{{"firmware_version", stats.firmware_version},
-                {"build_date", stats.build_date},
-                {"uptime_s", stats.uptime_s},
-                {"free_heap", stats.free_heap},
-                {"min_free_heap", stats.min_free_heap},
-                {"free_psram", stats.free_psram},
-                {"storage_used", stats.storage.used_bytes},
-                {"storage_total", stats.storage.total_bytes},
-                {"storage_mounted", stats.storage.mounted},
-                {"storage_degraded", stats.storage.degraded},
-                {"temperature_c", stats.chip_temperature_c},
-                {"temperature_valid", stats.temperature_valid},
-                {"mac", stats.mac},
-                {"network", std::move(network)},
-                {"time", time_info_json(stats.time)},
-                {"last_backup_at", stats.last_backup_at},
-                {"drinks_today", stats.drinks_today}};
 }
 
 // Serialises events with the derived fields the contract exposes: `voided`
@@ -1100,7 +1064,9 @@ esp_err_t handle_ap_extend(RequestContext& ctx) {
 // --- System --------------------------------------------------------------
 
 esp_err_t handle_device(RequestContext& ctx) {
-    return send_json(ctx.req, 200, device_status_json(ctx.server.platform().stats()));
+    // Service stats add storage, last_backup_at and drinks_today on top of the
+    // platform diagnostics.
+    return send_json(ctx.req, 200, device_status_json(ctx.server.service().stats()));
 }
 
 esp_err_t handle_display_test(RequestContext& ctx) {
