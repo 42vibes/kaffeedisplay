@@ -294,21 +294,20 @@ TEST_CASE("avatar choices persist through user events and leave balances unchang
     REQUIRE(f.ledger.find_user(id).has_value());
     CHECK(f.ledger.find_user(id)->avatar_id == 0);
 
-    auto selected = f.must(f.ledger.update_user(id, "Ada", "#D4A373", true, "avatar",
-                                                f.now, TimeSource::Synced, 30));
-    CHECK(selected.user_avatar_id == 30);
+    const auto source = TimeSource::Synced;
+    auto selected = f.ledger.update_user(id, "Ada", "#fff", true, "avatar", f.now, source, 30);
+    REQUIRE(static_cast<bool>(selected));
+    CHECK(selected.value->user_avatar_id == 30);
     CHECK(f.ledger.find_user(id)->avatar_id == 30);
     CHECK(f.ledger.balance(id) == 0);
 
     // Existing callers do not pass avatar_id, so updates must preserve it.
-    f.must(f.ledger.update_user(id, "Ada Renamed", "#D4A373", true, "rename",
-                                f.now, TimeSource::Synced));
+    f.must(f.ledger.update_user(id, "Ada Renamed", "#fff", true, "rename", f.now, source));
     CHECK(f.ledger.find_user(id)->avatar_id == 30);
     f.must(f.ledger.archive_user(id, "archive", f.now, TimeSource::Synced));
     CHECK(f.ledger.find_user(id)->avatar_id == 30);
 
-    f.must(f.ledger.update_user(id, "Ada", "#D4A373", true, "clear",
-                                f.now, TimeSource::Synced, 0));
+    f.must(f.ledger.update_user(id, "Ada", "#fff", true, "clear", f.now, source, 0));
     CHECK(f.ledger.find_user(id)->avatar_id == 0);
 }
 
@@ -316,8 +315,8 @@ TEST_CASE("invalid avatar ids do not enter the journal") {
     Fixture f;
     auto id = f.user("Ada");
     const size_t old_events = f.persisted.size();
-    auto invalid = f.ledger.update_user(id, "Ada", "#D4A373", true, "bad-avatar",
-                                         f.now, TimeSource::Synced, 31);
+    auto invalid = f.ledger.update_user(id, "Ada", "#fff", true, "invalid", f.now,
+                                        TimeSource::Synced, 31);
     CHECK_FALSE(static_cast<bool>(invalid));
     CHECK(f.persisted.size() == old_events);
     CHECK(f.ledger.find_user(id)->avatar_id == 0);
