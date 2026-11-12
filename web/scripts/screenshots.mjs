@@ -95,6 +95,12 @@ async function main() {
       await page.goto(`${BASE}${route}`);
       await page.getByRole("heading", { name: heading }).waitFor();
       await shot(page, file);
+      if (route === "/users") {
+        await page.getByRole("button", { name: "Bearbeiten" }).first().click();
+        await page.getByRole("dialog").waitFor();
+        await shot(page, "web-avatar-picker.png", false);
+        await page.keyboard.press("Escape");
+      }
     }
 
     await page.goto(`${BASE}/system`);
