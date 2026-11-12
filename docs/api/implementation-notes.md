@@ -1,0 +1,169 @@
+# HTTP API implementation notes (T-008, part of T-004)
+
+Status: all contract routes are implemented in `firmware/components/api` against
+`docs/api/openapi.yaml`, `service.hpp` and the generated `kaffee/web_assets.hpp`.
+Reports and the final `main`/`net` wiring remain integration work owned by other
+tracks.
+
+T-004 is split into two branches:
+
+| Part | Branch | Scope |
+|---|---|---|
+| API | `feat/T-008-api` (PR #4) | `firmware/components/api`, host contract tests |
+| Net | `feat/T-005-api-net` | `firmware/components/net`, lifecycle and captive DNS |
+
+## Layout
+
+| File | Purpose |
+|---|---|
+| `include/kaffee/api.hpp` | frozen `ApiServer` interface (unchanged) |
+| `include/kaffee/api_util.hpp` | routing/query/cookie/CSV/time/error/static helpers (host-tested) |
+| `include/kaffee/api_routes.hpp` | route metadata: method, auth policy, request-id requirement (host-tested) |
+| `include/kaffee/api_multipart.hpp` | boundary parser and streaming multipart scanner (host-tested) |
+| `src/api.cpp` | lifecycle, catch-all dispatcher, auth/CSRF middleware, JSON errors, captive probes, log ring |
+| `src/api_handlers.cpp` | REST handlers + handler bindings in `route_specs()` order |
+| `src/api_assets.cpp` | `webassets` table, fallback page, gzip, SPA fallback, cache policy |
+| `src/api_ota.cpp` | streaming multipart OTA, SHA-256, `esp_ota_*`, reboot |
+
+One `httpd` handler (`/*`, `HTTP_ANY`) dispatches internally. `route_specs()` and
+`route_handlers()` are parallel arrays and the dispatcher rejects a length
+mismatch instead of mis-routing.
+
+## Auth, sessions, CSRF
+
+- Session cookie `kaffee_session`: `HttpOnly; SameSite=Strict; Path=/`. No
+  `Secure` flag because the device serves plain HTTP by design.
+- Every request calls `KaffeeService::validate_session`; there is no parallel
+  session store. `GET /auth/me` re-issues the cookie with the refreshed sliding
+  expiry.
+- Writes require `X-CSRF-Token`, validated with `KaffeeService::validate_csrf`.
+- While `KaffeeService::must_change_admin_password()` is true, only
+  `POST /auth/logout`, `GET /auth/me`, `GET /settings` and
+  `POST /settings/password` are allowed. Everything else returns
+  `403 password_change_required` so the SPA can force the first-login change.
+- A successful password change calls `logout()` for the current token and clears
+  the cookie. **TODO(T-001):** `change_admin_password()` must clear all sessions
+  in the service; the API cannot enumerate other tokens without a parallel
+  store.
+- Login passes the client IP to the service; `auth` maps to 401 and
+  `rate_limit` to 429.
+
+## Errors
+
+Service/ledger errors are mapped by `map_service_error()`:
+
+| Service code | Status | Notes |
+|---|---|---|
+| `auth`, `session` | 401 | wrong credentials / expired session |
+| `rate_limit` | 429 | login backoff |
+| `password`, `settings`, `backup`, `amount`, `price`, `time`, `ap`, `name`, `type`, `seq`, `id` | 400 | validation |
+| `void` | 404 for "not found"/"unknown", else 409 | double void is 409 |
+| `event` | 404 | unknown booking |
+| `expense`, `user`, `product` | 404 for unknown, 409 for already/archived, else 400 | |
+| `debt`, `duplicate` | 409 | credit limit / replay |
+| `chain`, `hash`, unknown code | 500 | never exposes internals |
+
+The response keeps the stable service code and adds a German `message`. English
+service/ledger messages are never forwarded; the SPA may translate the code
+instead. API-level validation errors use German messages directly.
+
+## Idempotency, limits, caching
+
+- Ledger writes require a valid `X-Request-Id` (1–64 printable ASCII) and pass it
+  to the service; it is echoed as a response header. `/restore` and
+  `/settings/password` also require it (see contract gaps). No random id is
+  generated for retries.
+- Body limits: 32 KiB JSON, 4 MiB restore, ~3 MiB OTA (partition size).
+- JSON bodies must be objects; `nlohmann::json` type errors in settings become
+  400 instead of 500.
+- JSON/backup responses use `Cache-Control: no-store`.
+
+## Settings
+
+`PUT /settings` applies the provided subtrees and keeps omitted values, matching
+the all-optional `Settings` schema. Empty `ap_password`/`sta_password` keep the
+stored secret. Validation covers display ranges, AP window, hostname, SSID
+length, WPA2 password length (8–63 when set), timezone/SNTP lengths, currency,
+locale and a non-negative `max_open_debt_cents`. The merge-vs-replace choice is
+documented here because the spec only says "replace settings".
+
+## Static SPA and captive probes
+
+- `GET /` and extension-less paths serve `index.html` with `no-cache`.
+- `/assets/<name>-<hash>.<ext>` uses `public, max-age=31536000, immutable`;
+  other files 1 hour. `ETag`/`If-None-Match` produce 304.
+- Gzip is used when the asset table has a pre-compressed body and the client
+  accepts it.
+- **HEAD is not served** for static files (405): `esp_http_server` owns
+  `Content-Length`, so a manual HEAD response would be ambiguous. The policy is
+  unit-tested.
+- Captive probes: `GET /generate_204` returns 204; `/hotspot-detect.html`,
+  `/connecttest.txt` and `/ncsi.txt` return 302 to `http://<ap-ip>/` while the AP
+  is active and 404 otherwise. The net component owns the AP lifecycle; the API
+  only reflects it.
+- Assets come from `kaffee/web_assets.hpp` (`kaffee::api::Asset`,
+  `kaffee_web_asset_lookup`). The `webassets` component is added to `REQUIRES`
+  when the header exists; without it (or with an empty generated table) a small
+  German fallback page is served.
+
+## Server lifecycle
+
+- `main`/`net` start the server only while an interface is up.
+- If `ApiServer::stop()` is called from the `httpd` task (for example inside
+  `POST /ap/stop`), teardown is deferred to a helper task after a short delay so
+  the response can flush and `httpd_stop` does not deadlock. The destructor
+  waits briefly for a pending deferred stop.
+- HTTP receive/send timeouts are 10 s so a stalled OTA upload cannot pin a
+  socket indefinitely.
+
+## OTA
+
+- Streaming multipart parser: boundary/`name="firmware"` parsing and the
+  chunk-split scanner are pure helpers with host tests. A trailing `--` closing
+  boundary is required.
+- Incremental SHA-256 is computed while writing; `X-Firmware-SHA256` is verified
+  when supplied. `esp_ota_end` validates the image, then the boot partition is
+  switched and the device reboots after the response is sent.
+- `main.cpp` keeps rollback armed until `boot_health_check()` passes; the current
+  placeholder only proves the skeleton boots. The real check (storage mounted,
+  service created, UI/net up) is a TODO in `main.cpp`.
+
+## Integration TODOs
+
+1. **Reports (T-005).** `GET /reports/{kind}` validates the kind and returns
+   `501 not_implemented`. Replace `handle_reports` with the reports component and
+   stream CSV via `send_chunked_text`/`content_disposition`.
+2. **Webassets build (T-007).** Run `tools/embed_web.py`; the API picks the
+   component up automatically and serves the real SPA.
+3. **Main wiring.** Create service/platform, call `ApiServer::create()`, start
+   and stop from net callbacks, and clear sessions when the AP stops.
+4. **Captive DNS.** `net` answers the probe hostnames/unknown hosts; the API
+   handles the probe paths above only when they reach the server.
+5. **Service session revocation.** `change_admin_password()` should clear all
+   sessions (T-001). The API revokes the current one and documents the gap.
+
+## Contract gaps (OpenAPI not changed)
+
+These mutating routes do not declare `X-Request-Id`; the API requires it anyway
+to avoid duplicate writes on retries. The spec should add the parameter:
+
+- `POST /settings/password`
+- `POST /restore`
+
+The following are weaker idempotency (optional header, no generated id):
+
+- `POST /time/sync`, `POST /ap/stop`, `POST /ap/extend`, `POST /display/test`,
+  `POST /ota`
+
+Other observations:
+
+- `Event.voided`/`Event.balance_after_cents` are derived by the API; the ledger
+  stores neither.
+- `GET /users/{id}/transactions?before=` is an exclusive event `seq` cursor.
+- `GET /users` returns archived users too (`active: false`); the spec has no
+  `include_archived` parameter.
+- `GET /stats/leaderboard` only accepts `month`; with time unset it falls back to
+  the last 30 days.
+- `/device` and `/summary` return a few extra diagnostics (allowed by the spec).
+- The login response carries the session only in the cookie; the body contains
+  username, CSRF token and expiry.

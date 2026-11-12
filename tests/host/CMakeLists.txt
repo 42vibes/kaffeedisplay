@@ -20,6 +20,7 @@ set(STORAGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/storage)
 set(SERVICE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/service)
 set(REPORTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/reports)
 set(NET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/net)
+set(API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/components/api)
 
 add_executable(kaffee_tests
   doctest_main.cpp
@@ -29,6 +30,8 @@ add_executable(kaffee_tests
   auth_test.cpp
   reports_test.cpp
   net_pure_test.cpp
+  api_util_test.cpp
+  api_contract_test.cpp
   ${DOMAIN_DIR}/src/domain.cpp
   ${DOMAIN_DIR}/src/json.cpp
   ${DOMAIN_DIR}/src/sha256.cpp
@@ -38,6 +41,9 @@ add_executable(kaffee_tests
   ${SERVICE_DIR}/src/service.cpp
   ${REPORTS_DIR}/src/reports.cpp
   ${NET_DIR}/src/net_pure.cpp
+  ${API_DIR}/src/api_util.cpp
+  ${API_DIR}/src/api_routes.cpp
+  ${API_DIR}/src/api_multipart.cpp
 )
 
 target_include_directories(kaffee_tests PRIVATE
@@ -47,6 +53,8 @@ target_include_directories(kaffee_tests PRIVATE
   ${SERVICE_DIR}/include
   ${REPORTS_DIR}/include
   ${NET_DIR}/include
+  ${API_DIR}/include
+  ${API_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
 )
 

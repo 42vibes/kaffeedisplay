@@ -1,13 +1,20 @@
 # T-004 — HTTP API, auth, AP/time, backup/OTA
 
-Status: in-progress (net/time portion in review; API still pending)
+Status: in-progress — API + net implemented; main/service/UI integration pending
 Track: backend
-Owner: opencode (network/time subagent)
-Branch: `feat/T-005-api-net` (net/time sub-worktree)
+Owner: net-agent / api-agent
+Branches: `feat/T-005-api-net` (net), `feat/T-008-api` (API)
 
-> **Task/branch number mismatch:** this worktree was allocated as
-> `feat/T-005-api-net`, but T-005 is the reports task. The branch contains only
-> the T-004 network/time portion; API, auth, backup and OTA remain.
+## Split
+
+- **`feat/T-008-api`** — `firmware/components/api`: REST routes, auth/CSRF/
+  request-id middleware, static SPA (webassets + fallback), CSV/backup hooks,
+  OTA, host contract tests.
+- **`feat/T-005-api-net`** — `firmware/components/net`: AP/STA lifecycle,
+  captive DNS, mDNS, SNTP, browser time, probe endpoints.
+
+Integration (main.cpp, service/platform adapter, API start/stop, reports hook,
+factory reset, webassets) is tracked under the integration task.
 
 ## Context
 
