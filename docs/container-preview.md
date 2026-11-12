@@ -30,4 +30,35 @@ docker compose -f compose.preview.yml down
 
 The VNC server has no password and is bound to **127.0.0.1** only. Never forward port 6080 to an external or public interface.
 
+## Troubleshooting: noVNC shows a black screen
+
+The Docker preview starts a 480 × 480 Xvfb display, waits for X11 to be
+ready, then starts x11vnc, websockify and the real LVGL/SDL simulator.
+SDL is forced to use its software renderer to work reliably in containers.
+
+After pulling the latest `feature/user-avatars` branch, rebuild the **image**
+(not just restart the old container):
+
+```sh
+git pull origin feature/user-avatars
+docker compose -f compose.preview.yml down
+docker compose -f compose.preview.yml up --build --force-recreate
+```
+
+Open the full address `http://localhost:6080/vnc.html?autoconnect=1`.
+If the view is still empty, check:
+
+```sh
+docker compose -f compose.preview.yml ps
+docker compose -f compose.preview.yml logs --tail=100 display
+docker compose -f compose.preview.yml exec display python3 tools/preview/check-display.py
+```
+
+The last command should report `PASS` and many sampled colours. The normal
+continuous-integration workflow also builds the Docker image, starts the
+interactive simulator and checks the actual X11 pixels (not just PNG snapshots).
+
+If the check passes but your browser remains black, reload the noVNC page
+and verify it says **Connected**. The VNC port is bound to localhost only.
+
 The **device simulator does not flash real hardware**. Tests of touch electronics, firmware boot, and PSRAM usage still need the ESP32 board.
