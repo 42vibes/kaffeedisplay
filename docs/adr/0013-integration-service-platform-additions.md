@@ -24,10 +24,11 @@ and every new interface method has a default implementation except the two
 
 ## Decision
 
-1. `KaffeeService::ledger_snapshot()` returns a `Ledger` copy taken under the
-   service mutex. Reports bind it to a local for the duration of one request.
-   This mirrors ADR 0012's snapshot model: never hand out a reference that can
-   be mutated after the mutex is released.
+1. `KaffeeService::ledger_snapshot()` returns a
+   `std::shared_ptr<const Ledger>` copy taken under the service mutex. The
+   commit hook is cleared and the const view prevents reports from mutating the
+   live ledger. This mirrors ADR 0012's snapshot model: never hand out a
+   reference that can be mutated after the mutex is released.
 2. `KaffeeService::factory_reset()` erases the event store and settings store,
    clears sessions and in-memory state, and deliberately does **not** generate
    replacement credentials. The subsequent reboot goes through the first-boot

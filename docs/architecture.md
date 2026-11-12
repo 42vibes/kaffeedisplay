@@ -36,16 +36,23 @@
 
 ## Boot sequence
 
-1. NVS init, mount LittleFS storage partition.
-2. Load newest valid snapshot and replay the journal (hash chain verified).
-3. Load settings from NVS; generate AP credentials/admin password on first boot.
-4. Init board: ST7701S, GT911, backlight, rotation, brightness.
-5. Create `KaffeeService` with storage + platform adapter.
-6. Init LVGL/UI, show splash then page 1.
-7. Init network: STA (if configured) and on-demand AP state machine.
-8. Start HTTP server when any interface is up; start mDNS.
-9. Mark the OTA image valid after a successful boot.
-10. Start time service (restore last known time, mark quality).
+1. NVS init; mount the LittleFS `storage` partition. Only a genuinely blank
+   partition is formatted once; a failed mount aborts the boot and leaves OTA
+   rollback armed.
+2. Load settings from NVS; generate AP credentials and, on first boot, the admin
+   password.
+3. Init board: ST7701S, GT911, backlight, rotation, brightness.
+4. Create `KaffeeService` with storage + platform adapter; replay snapshot +
+   journal (hash chain verified) and apply persisted display settings.
+5. Init LVGL and the three-page UI; show page 1.
+6. Init network: STA (if configured), apply network/time settings and restore the
+   last known clock. If no users exist yet, auto-start the AP for the configured
+   window (default 15 min) for provisioning; otherwise the AP stays off.
+7. Start the HTTP API from the network listener worker when the AP or STA is up;
+   mDNS runs with it.
+8. Run the boot health check (NVS, storage, service, display/LVGL, UI, network,
+   API) and only then mark the OTA image valid.
+9. Browser time sync on admin login; SNTP when STA has internet.
 
 ## Threading
 
@@ -70,8 +77,9 @@
 
 ## Network policy
 
-- AP is **off by default**. It starts only from device page 3 (3 s long-press)
-  or explicitly over the LAN API, for a bounded window.
+- AP is **off by default**. It starts from device page 3 (3 s long-press),
+  explicitly over the LAN API, or automatically on a first boot with no users
+  (bounded window, default 15 min) for provisioning.
 - While any interface is up, the HTTP server and mDNS run.
 - Captive DNS/portal run only while the AP is active and are best-effort; the
   Wi-Fi/URL QR codes are the primary connection path.

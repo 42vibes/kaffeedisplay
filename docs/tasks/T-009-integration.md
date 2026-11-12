@@ -66,21 +66,49 @@ instruction to change it in the web UI; the page-1 empty state points to
 `Seite 3 → WLAN + Passwort`. The SPA reads `must_change_password` from
 login/`/auth/me` and renders a forced first-login change form before the shell.
 
+## Review fixes
+
+- **All-time reports:** JSON omits `from`/`to` for `period=all`; the web date
+  formatter returns `–` for sentinel/invalid timestamps instead of throwing.
+- **Factory reset UI:** the danger-zone button is enabled with the existing
+  typed `WERKSRESET` confirmation; mock/e2e coverage added.
+- **LittleFS safety:** `format_if_mount_failed=false`. Only a genuinely blank
+  partition is formatted once; a failed mount aborts the boot and leaves OTA
+  rollback armed. The mount policy is unit-tested and both paths were exercised
+  on hardware.
+- **Read-only reports:** `ledger_snapshot()` now returns
+  `std::shared_ptr<const Ledger>` with the commit hook cleared.
+- **Settings atomicity:** `save_settings()` persists first and rolls back the
+  blob + live display/network/time on a platform apply failure.
+- **Contract tests:** factory reset added to the request-id table; time sync is
+  allowed during the forced password change.
+- **Boot health:** includes the API server/controller. The controller retries a
+  failed HTTP start every 5 s while an interface is up; boot health waits for
+  the API when the AP/STA is active.
+- **Nits:** stay-awake calls are idempotent/consolidated, factory-reset task
+  creation failure returns 500, and OpenAPI/docs now describe all-time report
+  semantics, errors and buffered CSV sending.
+
 ## Evidence
 
-- `make test-host`: 132 test cases / 17,334 assertions, all pass (new tests:
-  ledger snapshot, settings apply hooks, factory reset, report JSON envelope,
-  setup-password persistence/reload/clear/upgrade, UI strings).
-- `make test-web`: typecheck + 27 Vitest tests, including the forced first-login
-  form.
+- `make test-host`: 135 test cases / 17,380 assertions, all pass (new tests:
+  ledger snapshot, settings apply/rollback, factory reset, report JSON envelope,
+  all-time report bounds, setup-password persistence/reload/clear/upgrade,
+  LittleFS mount policy, UI strings).
+- `make test-web`: typecheck + 28 Vitest tests, including the forced first-login
+  form and invalid timestamp formatting.
+- `make test-e2e`: 10 Playwright tests, including the typed factory-reset flow.
 - `make assets` + `make build-docker`: success with the real SPA
-  (3 assets, 120.4 KiB gzip; app image 0x2af170 with 11% partition free).
+  (3 assets, 120.4 KiB gzip; app image 0x2af8b0 with 10% partition free).
 - `make flash` on `/dev/ttyUSB0`, serial boot log confirms: storage mounted,
   UI started on page 1, network ready, AP started for provisioning, HTTP API
   started, `boot health ... => ok`, OTA image confirmed.
-- Serial boot log: `/tmp/opencode/boot-setup-final.log` from the final image. The
-  setup password key survived a reflash and reboot unchanged (`setup_password`
-  present in NVS, value verified by dump).
+- Serial boot log: `/tmp/opencode/boot-blockers-final.log` from the final image.
+  A forced blank `storage` partition was formatted once (`boot-blank.log`); the
+  normal next boot mounted without formatting. The mount-failure path aborts
+  boot before the health/OTA confirmation and is covered by the unit-tested
+  policy. The setup password key survived storage erase, reflash and reboot
+  unchanged.
 - Host has no Wi-Fi interface, so the API could not be exercised over the AP
   from this machine; HIL also needs the not-yet-implemented serial CLI.
 - Branch `feat/T-009-integration` is pushed. PR creation from this environment

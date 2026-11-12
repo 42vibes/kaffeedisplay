@@ -101,10 +101,15 @@ documented here because the spec only says "replace settings".
 - `format=json` returns the envelope from `docs/api/reports.md`
   (`kind`, `period`, `from`, `to`, `columns`, `rows`, `time_quality`). Money
   cells are integer cents.
-- `format=csv_excel` and `format=csv_raw` stream the shared `reports::write_csv`
-  writer. `Accept: text/csv` selects Excel when `format` is omitted.
-- If the device clock is unset, standard periods return `409 time_unset` instead
-  of silently reporting 1970.
+- `format=csv_excel` and `format=csv_raw` build the CSV through the shared
+  `reports::write_csv` writer, then send it in `httpd_resp_send_chunk` slices.
+  Reports are kiosk-sized, so one request buffer avoids holding the service
+  mutex across socket writes.
+- `Accept: text/csv` selects Excel when `format` is omitted.
+- If the device clock is unset, bounded periods return `409 time_unset` instead
+  of silently reporting 1970; `period=all` still works.
+- For `period=all`, the JSON envelope omits `from`/`to` (unbounded). Bounded
+  periods include `from`/`to`.
 - The API takes a `KaffeeService::ledger_snapshot()` copy for the request,
   matching the snapshot model from ADR 0012.
 
