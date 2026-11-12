@@ -35,13 +35,22 @@ to help identify coffee members. A member's initials remain legible on each
 avatar, and preset `0` retains the original coloured-initials display.
 The presets are drawn with small LVGL shapes rather than uploaded images.
 
-The administrator assigns an avatar under **Benutzer → Bearbeiten → Benutzerbild**.
-Only the authenticated admin web interface can change it. The selection is
-saved with the user, included in regular backups, and survives a restart.
+**New users automatically receive a random preset (1–30)** on creation.
+The server avoids giving two consecutively created users the same preset.
+This also works when users are created through the admin API, not just the web
+form. The avatar stays fixed after creation; it does not change on each login
+or restart. No additional action from the administrator is needed.
 
-| Admin: 30 avatar choices (preview) |
-|---|
-| ![Avatar selection in the administrator's user editor](docs/ui/screenshots/web-avatar-picker.png) |
+The admin can override the automatically assigned avatar under
+**Benutzer → Bearbeiten → Benutzerbild** or explicitly select
+**Nur Initialen**. The create dialog defaults to **Zufällig vergeben**;
+choosing a specific motif or initials-only overrides that default.
+Avatar changes are only available through the authenticated admin web interface,
+and saved selections survive restarts and backups.
+
+| Neuen Benutzer anlegen: Zufällig vergeben | Neuer Benutzer: Avatar automatisch gesetzt |
+|---|---|
+| ![Default random avatar assignment in the create-user form](docs/ui/screenshots/web-avatar-picker.png) | ![New member receives a random preset](docs/ui/screenshots/web-user-random-avatar.png) |
 Existing users require no migration.
 
 **Preview:** The booking and selected-user screenshots above are generated from
