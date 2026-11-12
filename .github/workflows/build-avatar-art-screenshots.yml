@@ -23,10 +23,12 @@ jobs:
           persist-credentials: true
       - name: Generate flash-resident artwork and web PNG images
         run: python3 tools/generate_avatar_art.py
-      - name: Install SDL2 simulator dependencies
+      - name: Install SDL2 simulator dependencies and C++ formatter
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsdl2-dev zlib1g-dev
+          sudo apt-get install -y libsdl2-dev zlib1g-dev clang-format
+      - name: Format LVGL avatar code
+        run: clang-format -i firmware/components/ui/src/page_book.cpp
       - name: Generate real display screenshots
         run: make screenshots
       - uses: actions/setup-node@v4
@@ -45,7 +47,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add firmware/components/ui/src/avatar_art_generated.hpp web/src/components/avatarArt.generated.ts docs/ui/screenshots
+          git add firmware/components/ui/src/avatar_art_generated.hpp firmware/components/ui/src/page_book.cpp web/src/components/avatarArt.generated.ts docs/ui/screenshots
           if ! git diff --cached --quiet; then
             git commit -m "assets: embed 30 illustrated avatars and refresh UI previews"
             git push origin HEAD:feature/user-avatars
