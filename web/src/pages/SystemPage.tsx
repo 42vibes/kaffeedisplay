@@ -27,10 +27,6 @@ interface SystemData {
   logs: LogsResponse;
 }
 
-// The firmware route is not part of the OpenAPI contract yet (see PR notes).
-// Keep the UI honest instead of firing a request that always 404s.
-const FACTORY_RESET_AVAILABLE = false;
-
 export function SystemPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -433,12 +429,9 @@ export function SystemPage() {
           className="btn btn-danger mt-3"
           type="button"
           onClick={() => setResetOpen(true)}
-          disabled={!FACTORY_RESET_AVAILABLE}
-          title={de.factoryResetGap}
         >
-          {FACTORY_RESET_AVAILABLE ? de.factoryReset : de.factoryResetUnavailable}
+          {de.factoryReset}
         </button>
-        <p className="muted mt-2 text-xs">{de.factoryResetGap}</p>
       </section>
 
       <Modal
