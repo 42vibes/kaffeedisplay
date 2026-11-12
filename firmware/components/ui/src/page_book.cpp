@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 
+#include "avatar_art_generated.hpp"
 #include "format.hpp"
 #include "strings.hpp"
 #include "theme.hpp"
@@ -11,60 +12,43 @@ namespace kaffee::ui {
 
 namespace {
 
-// Five palettes x six decorative motifs = 30 static, allocation-bounded presets.
-// These are simple LVGL objects: no image decoder, font assets, or animation timer.
+// Each preset is a distinct 40x40 RGB565 illustration held in flash. Only
+// the selected user's initials are drawn at runtime. No dynamic decoder/upload.
 lv_obj_t* make_avatar(lv_obj_t* parent, const std::string& name, const std::string& color, int size,
                       int avatar_id = 0) {
-    static constexpr uint32_t palette[] = {
-        0xD4A373, 0x8FBC8F, 0x7FA7C9, 0xC9A0DC, 0xE07A5F,
-    };
-    const bool preset = avatar_id >= 1 && avatar_id <= kMaxUserAvatarId;
-    const uint32_t fill = preset ? palette[(avatar_id - 1) / 6] : theme::COLOR_ACCENT;
+    const lv_image_dsc_t* artwork = avatar_art(avatar_id);
+    const bool preset = artwork != nullptr;
     lv_obj_t* circle = theme::make_circle(
-        parent, size, preset ? theme::color(fill) : parse_hex_color(color, theme::COLOR_ACCENT));
+        parent, size,
+        preset ? theme::color(theme::COLOR_SURFACE)
+               : parse_hex_color(color, theme::COLOR_ACCENT));
+
     if (preset) {
-        const int unit = std::max(5, size / 6);
-        const int offset = std::max(3, size / 9);
-        const int motif = (avatar_id - 1) % 6;
-        const lv_color_t ink = theme::color(theme::COLOR_BG);
-        auto mark = [&](int x, int y, int w, int h, bool round) {
-            lv_obj_t* obj = lv_obj_create(circle);
-            lv_obj_set_size(obj, w, h);
-            lv_obj_set_pos(obj, x, y);
-            lv_obj_set_scrollable(obj, false);
-            lv_obj_set_clickable(obj, false);
-            lv_obj_set_style_radius(obj, round ? LV_RADIUS_CIRCLE : 1, 0);
-            lv_obj_set_style_bg_color(obj, ink, 0);
-            lv_obj_set_style_bg_opa(obj, LV_OPA_40, 0);
-            lv_obj_set_style_border_width(obj, 0, 0);
-            lv_obj_set_style_pad_all(obj, 0, 0);
-        };
-        switch (motif) {
-            case 0:
-                mark(offset, offset, unit, unit, true);
-                break;
-            case 1:
-                mark(size - offset - unit, offset, unit, unit, true);
-                break;
-            case 2:
-                mark(offset, size - offset - unit, unit, unit, true);
-                mark(size - offset - unit, offset, unit, unit, true);
-                break;
-            case 3:
-                mark(offset, offset, unit * 2, std::max(3, unit / 2), false);
-                break;
-            case 4:
-                mark(size - offset - unit, size - offset - unit, unit, unit, true);
-                break;
-            default:
-                mark(offset, offset, unit, unit, true);
-                mark(size - offset - unit, size - offset - unit, unit, unit, true);
-                break;
-        }
+        lv_obj_set_style_clip_corner(circle, true, 0);
+        lv_obj_t* image = lv_image_create(circle);
+        lv_image_set_src(image, artwork);
+        lv_obj_center(image);
+        lv_obj_set_clickable(image, false);
+        lv_obj_set_scrollable(image, false);
+
+        lv_obj_t* badge = lv_obj_create(circle);
+        lv_obj_set_size(badge, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_style_pad_all(badge, 1, 0);
+        lv_obj_set_style_bg_color(badge, theme::color(theme::COLOR_BG), 0);
+        lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(badge, 0, 0);
+        lv_obj_set_style_radius(badge, 6, 0);
+        lv_obj_set_scrollable(badge, false);
+        lv_obj_set_clickable(badge, false);
+        theme::make_label(badge, initials(name).c_str(), theme::font_small(),
+                          theme::color(theme::COLOR_TEXT));
+        lv_obj_align(badge, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    } else {
+        lv_obj_t* text = theme::make_label(circle, initials(name).c_str(),
+                                           theme::font_body_bold(),
+                                           theme::color(theme::COLOR_BG));
+        lv_obj_center(text);
     }
-    lv_obj_t* text = theme::make_label(circle, initials(name).c_str(), theme::font_body_bold(),
-                                       theme::color(theme::COLOR_BG));
-    lv_obj_center(text);
     return circle;
 }
 
