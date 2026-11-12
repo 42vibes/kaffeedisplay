@@ -36,17 +36,30 @@ python3 tools/settime.py --epoch 1762819200 --source manual
 | Command | Reply | Purpose |
 |---|---|---|
 | `help` | `OK help commands=...` | List commands (one line). |
-| `status` | `OK status seq=<n> users=<n> products=<n> time=<epoch> time_source=<src> ap=<on\|off>` | Ledger and system summary. |
-| `time` | `OK time <epoch> source=<src>` | Read the device clock. |
+| `status` | `OK status seq=<n> users=<n> users_active=<n> products=<n> products_active=<n> time=<epoch> time_source=<src> time_trusted=<0\|1> ap=<on\|off\|starting> ap_ip=<ip> sta=<on\|off> sta_ip=<ip> uptime_s=<n> heap_free=<n> heap_min=<n> psram_free=<n> psram_total=<n> storage_used=<n> storage_total=<n> storage_mounted=<0\|1> firmware=<version> drinks_today=<n>` | Ledger, system and interface summary. |
+| `ap` | `OK ap state=<on\|off\|starting> ssid=<ssid> [password=<pw>] ip=<ip> remaining_s=<n> sta=<on\|off>` | AP state. `password` is only present while the AP is active. |
+| `time` | `OK time <epoch> source=<src> trusted=<0\|1> last_sync=<epoch>` | Read the device clock. |
 | `time set <epoch> [source]` | `OK time set <epoch>` | Set UTC seconds; source is `manual`, `browser` or `sntp` (default `manual`). |
+| `display test` | `OK display test timeout_s=15` | Show the 15 s rotation/touch crosshair and corner markers. |
+| `display info` | `OK display info rotation=<deg> brightness=<pct> active=<pct> idle=<pct> backlight=<0\|1> width=480 height=480 pclk_hz=<hz> hsync_pulse=<n> hsync_back=<n> hsync_front=<n> vsync_pulse=<n> vsync_back=<n> vsync_front=<n>` | Current display settings and RGB timing. |
+| `display rotation <0\|90\|180\|270>` | `OK display rotation <deg>` | Change and persist the display rotation. |
+| `display brightness <0..100>` | `OK display brightness <pct>` | Persist 5–100%; 0–4 is a temporary diagnostic level (0 = backlight off). |
 | `ap start` | `OK ap start ttl=<seconds>` | Start the admin AP window (same policy as page 3). |
 | `ap stop` | `OK ap stop` | Stop the AP and clear admin sessions. |
-| `ap extend <seconds>` | `OK ap extend ttl=<seconds>` | Extend the AP window. |
+| `ap extend [<seconds>]` | `OK ap extend ttl=<seconds>` | Extend the AP window (default 900 s, max 86400 s). |
 | `setup-password` | `OK setup-password <password>` | Print the initial admin password until it has been changed. |
-| `backup` | `OK backup <bytes>` | Begin a backup export; the JSON body follows until `END backup`. Routine backups should use the admin API. |
-| `factory-reset <admin_password>` | `OK factory-reset` | Erase ledger, settings and secrets; reboots to first-boot state. |
+| `backup` | `OK backup <bytes>` followed by JSON and `END backup` | Bounded backup export (max 256 KiB); routine backups should use the admin API. |
+| `factory-reset <admin_password>` | `OK factory-reset confirm=YES timeout_s=30`, then `YES` → `OK factory-reset` | Two-step destructive reset. Erases ledger, settings and network secrets, then reboots. Requires the current admin password; anything other than `YES` cancels. |
+| `unlock-writes <admin_password>` | `OK unlock-writes ttl=600` | Test/HIL only: unlock `book`/`void` for 10 minutes. A build with `HIL_ALLOW_WRITES=1` (CMake option `KAFFEE_SERIAL_ALLOW_WRITES`) has them unlocked from boot. |
 | `book <user_id> <product_id> [request_id]` | `OK booking <event_id> <amount_cents>` | Test/HIL-only booking through the same service path as the touch UI. |
-| `void <event_id> <reason...>` | `OK void <event_id>` | Test/HIL-only reversal through the service. |
+| `void <event_id> [reason...]` | `OK void <event_id>` | Test/HIL-only reversal through the service. |
+| `reboot` | `OK reboot` | Reboot the device without erasing data. |
+
+`book` and `void` are locked by default because they create real ledger events.
+Unlock them at runtime with the admin password, or build the firmware with
+`HIL_ALLOW_WRITES=1`. Read-only commands never print the admin/setup password
+unless `setup-password` is used, and never print the AP password while the AP is
+off.
 
 `ERR <code> <message>` examples: `ERR not-found user`, `ERR auth required`,
 `ERR unknown-command book`. A timeout is not an error reply; clients must fail

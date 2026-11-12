@@ -40,10 +40,10 @@ constexpr uint8_t kTouchAddressBackup = 0x14;
 // scanout on real hardware.
 constexpr int kLcdPclkHz = 12 * 1000 * 1000;
 constexpr int kLcdHsyncPulse = 8;
-constexpr int kLcdHsyncBackPorch = 20;
+constexpr int kLcdHsyncBackPorch = 50;
 constexpr int kLcdHsyncFrontPorch = 10;
 constexpr int kLcdVsyncPulse = 8;
-constexpr int kLcdVsyncBackPorch = 10;
+constexpr int kLcdVsyncBackPorch = 20;
 constexpr int kLcdVsyncFrontPorch = 10;
 
 }  // namespace kaffee::board

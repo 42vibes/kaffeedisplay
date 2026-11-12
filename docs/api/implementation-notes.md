@@ -185,10 +185,13 @@ through `IPlatform::sync_time()`.
 
 ## Remaining integration notes
 
-1. **Serial CLI.** `docs/serial-cli.md` documents `status`, `time set`,
-   `setup-password`, `book`, `void` and `factory-reset`, but no console task is
-   implemented in the firmware yet. HIL write tests and the documented recovery
-   path therefore still need that task (T-007/T-009 follow-up).
+1. **Serial CLI.** `docs/serial-cli.md` documents the UART0 console
+   (`status`, `time set`, `setup-password`, `book`, `void`, `factory-reset`).
+   T-010 implements the bounded line reader in `firmware/main/serial_console.*`;
+   `book`/`void` are locked until `unlock-writes` or a HIL build. HIL write
+   tests now unlock automatically. The T-010 follow-up defers mDNS teardown off
+   the network mutex, fixing the `ap stop`/`factory_reset_credentials()` hang;
+   factory reset still erases the network NVS namespace directly and reboots.
 2. **Service session revocation.** `change_admin_password()` should clear all
    sessions (T-001). The API revokes the current one and documents the gap.
 3. **Captive DNS on the device.** The net component answers probe hosts; the API

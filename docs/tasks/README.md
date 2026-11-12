@@ -13,6 +13,7 @@ file as you work; put the PR link under Evidence when done.
 | T-006 | LVGL simulator + screenshots + README | ui | T-003 | ui-agent | review |
 | T-007 | HIL tools, fonts/assets, release pipeline | qa | foundation | tooling-agent | done |
 | T-009 | Firmware integration, reports, factory reset and boot | integration | T-001..T-008 | integration-agent | review |
+| T-010 | Serial console CLI + live AP validation | tooling | T-009 | serial-cli-agent | review |
 
 ## Workflow
 

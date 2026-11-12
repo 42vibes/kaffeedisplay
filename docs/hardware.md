@@ -40,14 +40,23 @@ GPIO 0 and 3 are strapping pins used as RGB data. They are outputs after boot;
 do not repurpose. The panel stays black with any init sequence other than the
 ST7701 type-9 sequence. Verify against the board revision at bring-up.
 
-RGB timing verified against Arduino_GFX/ESPHome: PCLK 12 MHz, HSYNC pulse 8 /
-back porch 20 / front porch 10, VSYNC pulse 8 / back porch 10 / front porch 10,
-DE active high, PCLK not inverted. Use the exact Arduino_GFX
-`st7701_type9_init_operations` table for the 480×480 Guition panel; the generic
-`esp_lcd_st7701` default sequence is not compatible. The table includes
-`0xCD 0x00` (disable the MDT test pattern) and ends with `0x3A 0x60`; otherwise
-the panel can show a blue field with a narrow colour-bar band instead of the
-framebuffer.
+RGB timing verified against Arduino_GFX/ESPHome and live scanout measurements:
+PCLK 12 MHz, HSYNC pulse 8 / back porch **50** / front porch 10, VSYNC pulse
+8 / back porch **20** / front porch 10, DE active high, PCLK not inverted. Use
+the exact Arduino_GFX `st7701_type9_init_operations` table for the 480×480
+Guition panel; the generic `esp_lcd_st7701` default sequence is not compatible.
+The table includes `0xCD 0x00` (disable the MDT test pattern) and ends with
+`0x3A 0x60`; otherwise the panel can show a blue field with a narrow colour-bar
+band instead of the framebuffer.
+
+The 480 px line is **shifted right and wrapped** if the RGB FIFO underruns
+while DMA reads the PSRAM framebuffer. Timing/porch sweeps alone only changed
+the phase by a few pixels. The fix is a small internal-RAM bounce buffer:
+`rgb_config.bounce_buffer_size_px = 5 * 480` (five lines, ~9.4 KB for the two
+buffers) with the PSRAM framebuffer still enabled. With the bounce buffer the
+type-9 test crosshair lands within ~7 px of centre instead of ~55–65 px right;
+the remaining offset is below the camera/panel tolerance and does not clip the
+page content. Do not remove the bounce buffer when changing PCLK or porches.
 
 ## Touch (GT911)
 

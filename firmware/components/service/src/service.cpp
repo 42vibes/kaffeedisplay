@@ -32,6 +32,78 @@ constexpr size_t kSetupPasswordLength = 16;
 // Compact after this many journaled events, or when the partition is 90% full.
 constexpr uint32_t kCompactEventThreshold = 256;
 
+// ---------------------------------------------------------------------------
+// Europe/Berlin day boundaries for stats. Reports already use the same rules;
+// the service has no net/reports dependency, so the small calendar helpers live
+// here instead of pulling in the whole report engine.
+// ---------------------------------------------------------------------------
+
+int64_t floor_div(int64_t value, int64_t divisor) {
+    int64_t quotient = value / divisor;
+    const int64_t remainder = value % divisor;
+    if (remainder != 0 && ((remainder < 0) != (divisor < 0))) --quotient;
+    return quotient;
+}
+
+int64_t days_from_civil(int year, int month, int day) {
+    const int y = year - (month <= 2 ? 1 : 0);
+    const int era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = static_cast<unsigned>(y - era * 400);
+    const unsigned doy =
+        static_cast<unsigned>((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1);
+    const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return static_cast<int64_t>(era) * 146097 + static_cast<int64_t>(doe) - 719468;
+}
+
+void civil_from_days(int64_t days, int& year, int& month, int& day) {
+    days += 719468;
+    const int64_t era = (days >= 0 ? days : days - 146096) / 146097;
+    const unsigned doe = static_cast<unsigned>(days - era * 146097);
+    const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    year = static_cast<int>(yoe) + static_cast<int>(era) * 400;
+    const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const unsigned mp = (5 * doy + 2) / 153;
+    day = static_cast<int>(doy - (153 * mp + 2) / 5 + 1);
+    month = static_cast<int>(mp < 10 ? mp + 3 : mp - 9);
+    year += (month <= 2 ? 1 : 0);
+}
+
+int weekday_from_days(int64_t days) {
+    int weekday = static_cast<int>((days + 4) % 7);
+    if (weekday < 0) weekday += 7;
+    return weekday;
+}
+
+int64_t last_sunday_days(int year, int month) {
+    const int next_year = month == 12 ? year + 1 : year;
+    const int next_month = month == 12 ? 1 : month + 1;
+    const int64_t last_day = days_from_civil(next_year, next_month, 1) - 1;
+    return last_day - weekday_from_days(last_day);
+}
+
+int berlin_offset_seconds(Timestamp utc) {
+    int year = 1970;
+    int month = 1;
+    int day = 1;
+    civil_from_days(floor_div(utc, 86400), year, month, day);
+    const int64_t start = last_sunday_days(year, 3) * 86400 + 3600;
+    const int64_t end = last_sunday_days(year, 10) * 86400 + 3600;
+    return (utc >= start && utc < end) ? 7200 : 3600;
+}
+
+Timestamp berlin_wall_to_utc(int64_t wall_seconds) {
+    Timestamp candidate = wall_seconds - 3600;
+    if (berlin_offset_seconds(candidate) == 7200) candidate = wall_seconds - 7200;
+    return candidate;
+}
+
+bool berlin_day_bounds(Timestamp utc, Timestamp& start, Timestamp& end) {
+    const int64_t local_days = floor_div(utc + berlin_offset_seconds(utc), 86400);
+    start = berlin_wall_to_utc(local_days * 86400);
+    end = berlin_wall_to_utc((local_days + 1) * 86400);
+    return end > start;
+}
+
 std::string make_id(IPlatform& platform, std::string_view prefix) {
     char buffer[32];
     std::snprintf(buffer, sizeof(buffer), "%016llx",
@@ -508,13 +580,18 @@ SystemStats KaffeeServiceImpl::stats() const {
     out.time = platform_.time_info();
     out.last_backup_at = last_backup_at_;
 
-    Timestamp ts = out.time.now;
-    if (ts > 0) {
-        const Timestamp day_start = ts - (ts % 86400);
+    const Timestamp ts = out.time.now;
+    Timestamp day_start = 0;
+    Timestamp day_end = 0;
+    if (ts > 0 && berlin_day_bounds(ts, day_start, day_end)) {
         int drinks = 0;
         for (const Event& event : ledger_.events()) {
-            if (event.ts < day_start || event.ts >= day_start + 86400) continue;
-            if (event.type == EventType::Purchase || event.type == EventType::GuestSale) ++drinks;
+            if (event.ts < day_start || event.ts >= day_end) continue;
+            if (event.type != EventType::Purchase && event.type != EventType::GuestSale) continue;
+            // A void keeps the original event in the append-only journal, but
+            // it no longer counts as a drink sold today.
+            if (ledger_.is_voided(event.id)) continue;
+            ++drinks;
         }
         out.drinks_today = drinks;
     }
@@ -1075,15 +1152,10 @@ Result<Unit> KaffeeServiceImpl::start_ap() {
 }
 
 Result<Unit> KaffeeServiceImpl::stop_ap() {
-    // Call the platform without holding the service mutex: the platform may
-    // invoke the AP-stopped callback synchronously.
-    auto result = platform_.stop_ap();
-    if (result) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        sessions_.clear();
-        login_states_.clear();
-    }
-    return result;
+    // Do not touch session state from the caller (httpd/serial) task. The
+    // network listener calls on_ap_stopped() on its worker after the AP is
+    // confirmed down; that is the single deferred session-clear path.
+    return platform_.stop_ap();
 }
 
 Result<Unit> KaffeeServiceImpl::extend_ap(int seconds) {

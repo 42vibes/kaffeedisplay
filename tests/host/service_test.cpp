@@ -590,6 +590,10 @@ TEST_CASE("ap delegation and timeout clear sessions") {
     REQUIRE(static_cast<bool>(second));
     REQUIRE(static_cast<bool>(fixture.service->stop_ap()));
     CHECK(fixture.platform.ap_stops == 1);
+    // Session clearing is deferred to the listener callback, never done on the
+    // httpd or serial task that requested the stop.
+    CHECK(static_cast<bool>(fixture.service->validate_session(second.value->token)));
+    fixture.platform.simulate_ap_timeout();
     CHECK_FALSE(static_cast<bool>(fixture.service->validate_session(second.value->token)));
 }
 
@@ -847,6 +851,20 @@ TEST_CASE("service stats include storage, backup and drinks") {
     CHECK(after.last_backup_at == kNow);
     CHECK(after.storage.used_bytes > 0);
     CHECK(after.drinks_today == 2);
+}
+
+TEST_CASE("drinks today excludes voided purchases") {
+    ServiceFixture fixture(true);
+    const std::string user_id = fixture.user("Ada");
+    const std::string product_id = fixture.product("Kaffee", 50);
+
+    auto sale = fixture.service->purchase(user_id, product_id, "stats-void");
+    REQUIRE(static_cast<bool>(sale));
+    CHECK(fixture.service->stats().drinks_today == 1);
+
+    REQUIRE(static_cast<bool>(
+        fixture.service->void_event(sale.value->id, "mistake", "stats-void-rev")));
+    CHECK(fixture.service->stats().drinks_today == 0);
 }
 
 TEST_CASE("factory reset clears storage, settings and sessions") {

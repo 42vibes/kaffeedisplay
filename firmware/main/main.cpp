@@ -21,6 +21,7 @@
 #include "lvgl.h"
 #include "nvs_flash.h"
 #include "platform_adapter.hpp"
+#include "serial_console.hpp"
 #include "storage_boot.hpp"
 
 namespace {
@@ -302,6 +303,13 @@ extern "C" void app_main(void) {
             ESP_LOGE(kTag, "interface is up but the HTTP server did not start");
             state.api = false;
         }
+    }
+
+    // The serial console is the recovery/HIL interface. Start it after the
+    // network so `status`/`ap` reflect the real interface state. It never calls
+    // LVGL; all commands go through the service/platform facades.
+    if (start_serial_console(*service, platform, *display)) {
+        ESP_LOGI(kTag, "serial console started");
     }
 
     const kaffee::BoardStats stats = display->stats();
