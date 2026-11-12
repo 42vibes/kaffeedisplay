@@ -14,6 +14,8 @@ namespace kaffee {
 
 using Timestamp = int64_t;  // Unix seconds, UTC
 
+inline constexpr int kMaxUserAvatarId = 30;  // 0 = initials only; 1..30 = fixed presets
+
 enum class TimeSource { Synced, Restored, Unset };
 enum class EventType {
     Unknown,
@@ -67,6 +69,7 @@ struct User {
     bool active = true;
     Timestamp created_at = 0;
     Timestamp archived_at = 0;
+    int avatar_id = 0;  // 0 = initials only
 };
 
 struct Product {
@@ -112,6 +115,7 @@ struct Event {
     std::string user_id;
     std::string user_name;
     std::string user_color;
+    int user_avatar_id = 0;
     bool user_active = true;
 
     // Product snapshot (empty when not applicable).
@@ -215,9 +219,10 @@ class Ledger {
 
     // Mutations persist through the commit hook before mutating memory.
     Result<Event> create_user(std::string name, std::string color, std::string request_id,
-                              Timestamp ts, TimeSource source);
+                              Timestamp ts, TimeSource source, int avatar_id = 0);
     Result<Event> update_user(std::string user_id, std::string name, std::string color, bool active,
-                              std::string request_id, Timestamp ts, TimeSource source);
+                              std::string request_id, Timestamp ts, TimeSource source,
+                              int avatar_id = -1);
     Result<Event> archive_user(std::string user_id, std::string request_id, Timestamp ts,
                                TimeSource source);
 

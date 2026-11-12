@@ -7,6 +7,7 @@ import { MoneyInput, MoneyPreview } from "../components/MoneyInput";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { TransactionTable } from "../components/TransactionTable";
+import { UserAvatar } from "../components/UserAvatar";
 import { de } from "../i18n/de";
 import { errorText } from "../lib/errors";
 import {
@@ -136,11 +137,7 @@ export function UsersPage() {
             <li key={user.id} className={`card p-4 ${user.active ? "" : "opacity-70"}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className="h-8 w-8 shrink-0 rounded-full border border-white/10"
-                    style={{ backgroundColor: user.color }}
-                    aria-hidden="true"
-                  />
+                  <UserAvatar name={user.name} color={user.color} avatarId={user.avatar_id} />
                   <div className="min-w-0">
                     <div className="truncate font-medium">{user.name}</div>
                     <div className="muted text-xs">
@@ -243,6 +240,8 @@ function UserFormDialog({
 }) {
   const [name, setName] = useState(user?.name ?? "");
   const [color, setColor] = useState(user?.color ?? colors[0]);
+  // null means the server chooses a random avatar when creating a user.
+  const [avatarId, setAvatarId] = useState<number | null>(user ? (user.avatar_id ?? 0) : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const writeId = useWriteId();
@@ -257,9 +256,12 @@ function UserFormDialog({
     setError("");
     try {
       if (user) {
-        await api.updateUser(user.id, { name: name.trim(), color }, writeId.id);
+        await api.updateUser(user.id, { name: name.trim(), color, avatar_id: avatarId ?? 0 }, writeId.id);
       } else {
-        await api.createUser({ name: name.trim(), color }, writeId.id);
+        await api.createUser(
+          { name: name.trim(), color, ...(avatarId === null ? {} : { avatar_id: avatarId }) },
+          writeId.id,
+        );
       }
       writeId.renew();
       onSaved();
@@ -320,6 +322,35 @@ function UserFormDialog({
             />
           </div>
         </div>
+        <fieldset className="space-y-2">
+          <legend className="label">{de.userAvatar}</legend>
+          {!user ? (
+            <button
+              type="button"
+              className={`mb-2 flex min-h-10 w-full items-center justify-center rounded-lg border px-3 py-2 text-sm ${avatarId === null ? "border-cream-50" : "border-cream-100/20"}`}
+              aria-pressed={avatarId === null}
+              onClick={() => setAvatarId(null)}
+            >
+              {de.userAvatarRandom}
+            </button>
+          ) : null}
+          <div className="grid grid-cols-5 gap-2 sm:grid-cols-6">
+            {Array.from({ length: 31 }, (_, id) => (
+              <button
+                key={id}
+                type="button"
+                className={`flex min-h-12 flex-col items-center justify-center rounded-lg border p-1 ${avatarId === id ? "border-cream-50" : "border-cream-100/20"}`}
+                aria-label={id === 0 ? de.userAvatarNone : `${de.userAvatarPreset} ${id}`}
+                aria-pressed={avatarId === id}
+                onClick={() => setAvatarId(id)}
+                title={id === 0 ? de.userAvatarNone : `${de.userAvatarPreset} ${id}`}
+              >
+                <UserAvatar name={name || "A"} color={color} avatarId={id} size={32} />
+                {id === 0 ? <span className="text-[9px]">{de.none}</span> : null}
+              </button>
+            ))}
+          </div>
+        </fieldset>
         {error ? <div className="text-sm text-rust-400" role="alert">{error}</div> : null}
       </form>
     </Modal>

@@ -81,7 +81,8 @@ and the guest-disabled guard. It does not call the `debug_*` state helpers.
 
 ## Fake backend
 
-`src/fake_backend.cpp` seeds five members, six drinks, top-ups, purchases and
+`src/fake_backend.cpp` seeds five members (four with preset avatars and one
+initials-only fallback), six drinks, top-ups, purchases and
 guest sales through the real `kaffee::Ledger`. Balances, leaderboards, voids and
 undo therefore use production domain code. AP/time/device stats are simulated.
 `firmware/components/ui/include/kaffee/ui_display.hpp` is the display port the

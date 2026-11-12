@@ -429,6 +429,44 @@ TEST_CASE("admin password change persists, is audited and idempotent") {
     CHECK(events.back().note == "admin_password_changed");
 }
 
+TEST_CASE("new users receive random avatars unless the admin explicitly chooses one") {
+    ServiceFixture fixture(true);
+    const std::string first = fixture.user("Anna", "random-1");
+    auto anna = fixture.service->find_user(first);
+    REQUIRE(anna.has_value());
+    CHECK(anna->avatar_id >= 1);
+    CHECK(anna->avatar_id <= kMaxUserAvatarId);
+
+    // A retried create must not reroll or create a second user.
+    const std::string retry = fixture.user("Anna", "random-1");
+    CHECK(first == retry);
+    CHECK(fixture.service->find_user(first)->avatar_id == anna->avatar_id);
+    CHECK(fixture.service->users().size() == 1);
+
+    const std::string second = fixture.user("Ben", "random-2");
+    auto ben = fixture.service->find_user(second);
+    REQUIRE(ben.has_value());
+    CHECK(ben->avatar_id >= 1);
+    CHECK(ben->avatar_id <= kMaxUserAvatarId);
+    CHECK(ben->avatar_id != anna->avatar_id);
+
+    const auto initials = fixture.service->create_user("Clara", "#D4A373", "manual-0", 0);
+    REQUIRE(static_cast<bool>(initials));
+    CHECK(fixture.service->find_user(initials.value->user_id)->avatar_id == 0);
+
+    const auto manual = fixture.service->create_user("David", "#D4A373", "manual-24", 24);
+    REQUIRE(static_cast<bool>(manual));
+    CHECK(fixture.service->find_user(manual.value->user_id)->avatar_id == 24);
+    fixture.service.reset();
+    auto loaded = KaffeeService::create(fixture.store, fixture.settings_store, fixture.platform);
+    REQUIRE(static_cast<bool>(loaded));
+    fixture.service = std::move(*loaded.value);
+    CHECK(fixture.service->find_user(first)->avatar_id == anna->avatar_id);
+    CHECK(fixture.service->find_user(second)->avatar_id == ben->avatar_id);
+    CHECK(fixture.service->find_user(initials.value->user_id)->avatar_id == 0);
+    CHECK(fixture.service->find_user(manual.value->user_id)->avatar_id == 24);
+}
+
 TEST_CASE("mutations are idempotent across validation and state checks") {
     ServiceFixture fixture(true);
     const std::string user_id = fixture.user("Ada", "req-user");
@@ -660,12 +698,18 @@ TEST_CASE("backup excludes secrets and restores state") {
     MemorySettingsStore other_settings;
     FakePlatform other_platform;
     configure_platform(other_platform);
+    // Model a second physical device with its own RNG state: otherwise the
+    // deterministic test RNG can recycle an imported event ID for the restore audit.
+    other_platform.rng = 0x8ac723d52b1f904eull;
     other_platform.time.now = kNow + 500;
     auto created = KaffeeService::create(other_store, other_settings, other_platform);
     REQUIRE(static_cast<bool>(created));
     std::unique_ptr<KaffeeService> other = std::move(*created.value);
 
     auto restored = other->import_backup(*backup.value, "restore-1");
+    const std::string restore_diagnostic =
+        restored.error ? restored.error->message : "backup restore succeeded";
+    INFO(restore_diagnostic);
     REQUIRE(static_cast<bool>(restored));
     CHECK(other->users().size() == fixture.service->users().size());
     CHECK(other->products().size() == fixture.service->products().size());
