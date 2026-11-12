@@ -670,6 +670,18 @@ paths:
       responses:
         '204': { description: Restored }
         '400': { $ref: '#/components/responses/BadRequest' }
+  /factory-reset:
+    post:
+      summary: Erase ledger, settings and network credentials, then reboot
+      description: |
+        Returns before the erase and reboot run so the response can flush.
+        The device returns to the first-boot state with a new setup password.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '204': { description: Factory reset accepted; the device reboots }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: Missing or invalid CSRF token }
   /ota:
     post:
       summary: Upload a firmware image

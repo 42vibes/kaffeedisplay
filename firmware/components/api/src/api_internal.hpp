@@ -62,6 +62,9 @@ class ApiServerImpl final : public ApiServer {
 
     // Used by the OTA handler: reboot only after the response has been sent.
     void schedule_reboot(uint32_t delay_ms);
+    // Used by POST /factory-reset: answer first, then erase storage/settings/net
+    // credentials and reboot from a helper task.
+    void schedule_factory_reset();
 
   private:
     Result<Unit> stop_locked();

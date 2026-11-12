@@ -85,3 +85,14 @@ in `Europe/Berlin`.
 
 `web/mock/server.mjs` implements this shape for all seven report kinds so the
 SPA and Playwright flows stay deterministic.
+
+## Implementation
+
+The device implements this shape in `kaffee::reports::to_json()`: every report
+kind returns its `kaffee::reports::columns()` table (stable keys such as
+`amount_cents`, `timestamp`, `balance_cents`) and one row per aggregate/event.
+Both EUR and cent money columns carry integer cents; the SPA renders either as
+EUR. `time_quality` is added by the API from the platform clock. Standard
+periods return `409 time_unset` while the device clock is unset; `period=custom`
+with `from`/`to` still works because the caller supplies both bounds.
+

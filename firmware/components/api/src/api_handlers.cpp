@@ -8,6 +8,7 @@
 
 #include "api_internal.hpp"
 #include "esp_log.h"
+#include "kaffee/reports.hpp"
 
 namespace kaffee {
 namespace api {
@@ -847,19 +848,79 @@ esp_err_t handle_leaderboard(RequestContext& ctx) {
 }
 
 esp_err_t handle_reports(RequestContext& ctx) {
-    static const std::set<std::string> kKinds = {
-        "overview", "consumption", "deposits", "expenses", "cashflow", "balances", "transactions"};
-    const std::string kind = ctx.params.get("kind").value_or("");
-    if (kKinds.count(kind) == 0) {
-        return send_error(ctx.req, 404, "not_found", "Unbekannter Bericht");
+    const std::string kind_name = ctx.params.get("kind").value_or("");
+    auto kind = reports::report_kind_from_name(kind_name);
+    if (!kind) return send_error(ctx.req, 404, "not_found", "Unbekannter Bericht");
+
+    const std::string query = req_query(ctx.req);
+    const std::string period_name = query_param(query, "period").value_or("month");
+    auto period_kind = reports::period_kind_from_name(period_name);
+    if (!period_kind) {
+        return send_error(ctx.req, 400, "invalid_input", "Unbekannter Zeitraum");
     }
-    // TODO(T-005): call kaffee::reports once components/reports lands. The
-    // report kinds, period handling (Europe/Berlin/DST) and the streaming CSV
-    // writer are owned by T-005. Until then the endpoint is explicit about it
-    // instead of returning misleading empty data.
-    ESP_LOGW(kTag, "reports/%s requested but the reports component is not linked yet",
-             kind.c_str());
-    return send_error(ctx.req, 501, "not_implemented", "Berichte sind noch nicht verfügbar");
+
+    reports::Period period;
+    if (*period_kind == reports::PeriodKind::Custom) {
+        auto from = query_int(query, "from");
+        auto to = query_int(query, "to");
+        if (!from || !to) {
+            return send_error(ctx.req, 400, "invalid_input",
+                              "from und to sind für einen eigenen Zeitraum erforderlich");
+        }
+        period = reports::custom(*from, *to);
+    } else {
+        const Timestamp now = ctx.server.platform().time_info().now;
+        if (*period_kind != reports::PeriodKind::All && now <= 0) {
+            return send_error(ctx.req, 409, "time_unset",
+                              "Gerätezeit ist nicht gesetzt; bitte zuerst synchronisieren");
+        }
+        period = reports::period(*period_kind, now);
+    }
+    if (!reports::valid(period)) {
+        return send_error(ctx.req, 400, "invalid_input", "Zeitraum ist ungültig");
+    }
+
+    const Ledger ledger = ctx.server.service().ledger_snapshot();
+
+    std::string format = query_param(query, "format").value_or("");
+    if (format.empty()) {
+        const std::string accept = req_header(ctx.req, "Accept").value_or("");
+        format = accept.find("text/csv") != std::string::npos ? "csv_excel" : "json";
+    }
+
+    if (format == "json") {
+        nlohmann::json payload = reports::to_json(ledger, *kind, period);
+        const TimeInfo time = ctx.server.platform().time_info();
+        nlohmann::json quality{{"source", Ledger::time_source_name(time.source)}};
+        if (time.last_sync > 0) quality["last_sync"] = time.last_sync;
+        if (time.now > 0) quality["trusted"] = time.trusted;
+        payload["time_quality"] = std::move(quality);
+        return send_json(ctx.req, 200, payload);
+    }
+
+    reports::CsvFormat csv_format;
+    if (format == "csv_excel") {
+        csv_format = reports::CsvFormat::Excel;
+    } else if (format == "csv_raw") {
+        csv_format = reports::CsvFormat::Raw;
+    } else {
+        return send_error(ctx.req, 400, "invalid_input", "Unbekanntes Berichtsformat");
+    }
+
+    // Reports are small at kiosk scale; buffering one CSV is simpler than
+    // holding the service lock across chunked socket writes.
+    std::string body;
+    reports::Sink sink{[&body](std::string_view chunk) {
+        body.append(chunk.data(), chunk.size());
+        return true;
+    }};
+    auto written = reports::write_csv(ledger, *kind, period, csv_format, sink);
+    if (!written) {
+        return send_error(ctx.req, 500, "internal_error", "Bericht konnte nicht erzeugt werden");
+    }
+    const std::string disposition = content_disposition(reports::report_filename(*kind, period));
+    return send_chunked_text(ctx.req, 200, reports::csv_content_type(csv_format), body,
+                             disposition.c_str());
 }
 
 // --- Settings ------------------------------------------------------------
@@ -1074,6 +1135,14 @@ esp_err_t handle_restore(RequestContext& ctx) {
     return send_no_content(ctx.req);
 }
 
+esp_err_t handle_factory_reset(RequestContext& ctx) {
+    // Authenticated + CSRF + request id checked by the dispatcher. Erase in a
+    // helper task after the response so the connection is not cut mid-body.
+    ctx.server.schedule_factory_reset();
+    ESP_LOGW(kTag, "factory reset requested from %s", client_ip(ctx.req).c_str());
+    return send_no_content(ctx.req);
+}
+
 }  // namespace
 
 // Handler bindings. MUST stay in the same order as `route_specs()` in
@@ -1132,6 +1201,7 @@ const std::vector<RouteHandler>& route_handlers() {
         &handle_logs,
         &handle_backup,
         &handle_restore,
+        &handle_factory_reset,
         &handle_ota,
     };
     return kHandlers;

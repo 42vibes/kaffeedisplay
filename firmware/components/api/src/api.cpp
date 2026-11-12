@@ -18,9 +18,10 @@ namespace {
 
 constexpr const char* kTag = "kaffee.api";
 
-// Response helper for the request id echo. The HTTP server task handles one
-// request at a time, but thread_local keeps this correct if that ever changes.
-thread_local std::string t_response_request_id;
+// Response helper for the request id echo. esp_http_server handles one request
+// at a time per server, so a plain string is sufficient and avoids a
+// thread_local object with a global constructor on the device.
+std::string t_response_request_id;
 
 httpd_method_t to_httpd_method(RouteMethod method) {
     switch (method) {
@@ -176,6 +177,25 @@ void reboot_task(void* arg) {
     esp_restart();
 }
 
+void factory_reset_task(void* arg) {
+    auto* self = static_cast<ApiServerImpl*>(arg);
+    // Let the 204 response flush before the AP/HTTP server goes away.
+    vTaskDelay(pdMS_TO_TICKS(300));
+
+    auto storage = self->service().factory_reset();
+    if (!storage) {
+        ESP_LOGE(kTag, "factory reset: storage/settings reset failed: %s",
+                 storage.error ? storage.error->message.c_str() : "unknown");
+    }
+    auto network = self->platform().reset_network_credentials();
+    if (!network) {
+        ESP_LOGE(kTag, "factory reset: network credential reset failed: %s",
+                 network.error ? network.error->message.c_str() : "unknown");
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+    esp_restart();
+}
+
 }  // namespace
 
 // --- Lifecycle -----------------------------------------------------------
@@ -274,6 +294,10 @@ bool ApiServerImpl::running() const {
 
 void ApiServerImpl::schedule_reboot(uint32_t delay_ms) {
     xTaskCreate(&reboot_task, "api_reboot", 2048, reinterpret_cast<void*>(delay_ms), 5, nullptr);
+}
+
+void ApiServerImpl::schedule_factory_reset() {
+    xTaskCreate(&factory_reset_task, "api_factory_reset", 4096, this, 5, nullptr);
 }
 
 // --- Responses -----------------------------------------------------------
@@ -495,10 +519,10 @@ constexpr size_t kLogLineLength = 160;
 
 struct LogRing {
     char lines[kLogLines][kLogLineLength];
-    size_t next = 0;
-    size_t count = 0;
-    bool installed = false;
-    vprintf_like_t previous = nullptr;
+    size_t next;
+    size_t count;
+    bool installed;
+    vprintf_like_t previous;
 };
 
 LogRing g_log_ring;

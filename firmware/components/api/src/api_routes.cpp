@@ -66,6 +66,7 @@ const std::vector<RouteSpec>& route_specs() {
         {RouteMethod::Get, "/api/v1/logs", AuthPolicy::Session, false},
         {RouteMethod::Get, "/api/v1/backup", AuthPolicy::Session, false},
         {RouteMethod::Post, "/api/v1/restore", AuthPolicy::SessionCsrf, true},
+        {RouteMethod::Post, "/api/v1/factory-reset", AuthPolicy::SessionCsrf, true},
         {RouteMethod::Post, "/api/v1/ota", AuthPolicy::SessionCsrf, false},
     };
     return kSpecs;

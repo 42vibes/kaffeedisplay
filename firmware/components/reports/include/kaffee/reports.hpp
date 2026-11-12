@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "kaffee/domain.hpp"
+#include "kaffee/json.hpp"
 
 // Report generation and streaming CSV export.
 //
@@ -142,6 +143,12 @@ Result<Unit> for_each_row(const Ledger& ledger, ReportKind kind, const Period& p
 // sink. The sink is never handed the whole file at once.
 Result<Unit> write_csv(const Ledger& ledger, ReportKind kind, const Period& period,
                        CsvFormat format, const Sink& sink);
+
+// Builds the JSON envelope described in docs/api/reports.md:
+// `kind`, `period`, `from`, `to`, `columns` and `rows`. Money cells are
+// integer cents; date/datetime cells are Unix seconds. The caller adds
+// `time_quality` because the report component has no clock/platform.
+nlohmann::json to_json(const Ledger& ledger, ReportKind kind, const Period& period);
 
 // Low-level writer, reusable by the API for other tables.
 class CsvWriter {

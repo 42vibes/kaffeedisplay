@@ -166,6 +166,7 @@ class KaffeeServiceImpl final : public KaffeeService {
     std::vector<Event> events() const override;
     std::vector<Expense> expenses() const override;
     std::vector<CashCount> cash_counts() const override;
+    Ledger ledger_snapshot() const override;
 
     // --- Auth ---
     Result<Session> login(const std::string& username, const std::string& password,
@@ -190,6 +191,7 @@ class KaffeeServiceImpl final : public KaffeeService {
     // --- Backup ---
     Result<std::string> export_backup() override;
     Result<Unit> import_backup(const std::string& json, const std::string& request_id) override;
+    Result<Unit> factory_reset() override;
 
     void set_change_callback(ChangeCallback callback) override;
     void refresh() override;
@@ -424,6 +426,8 @@ void KaffeeServiceImpl::rollback_settings_locked(const Settings& previous) {
     settings_ = previous;
     settings_store_.save(previous);
     platform_.apply_display_settings(previous.display);
+    platform_.apply_network_settings(previous.network);
+    platform_.apply_time_settings(previous.time);
 }
 
 // ---------------------------------------------------------------------------
@@ -730,6 +734,11 @@ std::vector<CashCount> KaffeeServiceImpl::cash_counts() const {
     return ledger_.cash_counts();
 }
 
+Ledger KaffeeServiceImpl::ledger_snapshot() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return ledger_;
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 
@@ -958,6 +967,10 @@ Result<Unit> KaffeeServiceImpl::save_settings(const Settings& input,
 
         auto applied = platform_.apply_display_settings(merged.display);
         if (!applied) return applied;
+        auto network = platform_.apply_network_settings(merged.network);
+        if (!network) return network;
+        auto time = platform_.apply_time_settings(merged.time);
+        if (!time) return time;
         auto saved = settings_store_.save(merged);
         if (!saved) return saved;
 
@@ -1102,10 +1115,32 @@ Result<Unit> KaffeeServiceImpl::import_backup(const std::string& json,
         }
 
         platform_.apply_display_settings(settings_.display);
+        platform_.apply_network_settings(settings_.network);
+        platform_.apply_time_settings(settings_.time);
         auto audit = audit_locked("backup_restored", "{}", request_id, "admin");
         if (!audit) return audit;
         return Result<Unit>::ok(Unit{});
     });
+}
+
+Result<Unit> KaffeeServiceImpl::factory_reset() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sessions_.clear();
+    login_states_.clear();
+
+    auto erased_store = store_.factory_reset();
+    if (!erased_store) return erased_store;
+    auto erased_settings = settings_store_.reset();
+    if (!erased_settings) return erased_settings;
+
+    // Do not generate replacement credentials here: the next boot must show a
+    // fresh setup password through the first-boot path (ADR 0013).
+    settings_ = Settings{};
+    setup_password_.clear();
+    must_change_password_ = true;
+    last_backup_at_ = 0;
+    ledger_.reset();
+    return Result<Unit>::ok(Unit{});
 }
 
 void KaffeeServiceImpl::set_change_callback(ChangeCallback callback) {
@@ -1113,7 +1148,6 @@ void KaffeeServiceImpl::set_change_callback(ChangeCallback callback) {
     change_callback_ = std::move(callback);
     if (notify_pending_) notifier_cv_.notify_one();
 }
-
 void KaffeeServiceImpl::refresh() {
     notify_changed();
 }
