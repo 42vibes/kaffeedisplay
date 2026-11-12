@@ -774,6 +774,11 @@ components:
         username: { type: string }
         csrf_token: { type: string, description: Send as X-CSRF-Token on writes. }
         expires_at: { type: integer, format: int64 }
+        must_change_password:
+          type: boolean
+          description: |
+            True until the initial admin password has been changed. The SPA
+            must show the forced first-login change form.
     User:
       type: object
       properties:

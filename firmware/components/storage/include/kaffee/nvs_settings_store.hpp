@@ -17,6 +17,9 @@ class NvsSettingsStore final : public ISettingsStore {
     Result<Settings> load() override;
     Result<Unit> save(const Settings& settings) override;
     Result<Unit> reset() override;
+    Result<std::string> load_setup_password() override;
+    Result<Unit> save_setup_password(const std::string& password) override;
+    Result<Unit> clear_setup_password() override;
 
   private:
     std::string ns_;

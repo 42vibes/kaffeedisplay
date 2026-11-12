@@ -28,6 +28,7 @@ constexpr uint64_t kLoginBackoffMaxSeconds = 300;
 constexpr uint32_t kAdminIterations = 50000;
 constexpr size_t kAdminSaltBytes = 16;
 constexpr size_t kSessionTokenBytes = 16;
+constexpr size_t kSetupPasswordLength = 16;
 // Compact after this many journaled events, or when the partition is 90% full.
 constexpr uint32_t kCompactEventThreshold = 256;
 
@@ -354,24 +355,56 @@ Result<Unit> KaffeeServiceImpl::init() {
     if (settings_.admin.username.empty()) settings_.admin.username = "admin";
 
     bool dirty = false;
+    bool setup_changed = false;
     const bool has_credentials =
         !settings_.admin.password_hash.empty() && !settings_.admin.salt.empty();
     if (!has_credentials) {
-        const std::string initial = random_password(platform_, 16);
+        const std::string initial = random_password(platform_, kSetupPasswordLength);
         settings_.admin.salt = random_hex(platform_, kAdminSaltBytes);
         settings_.admin.iterations = kAdminIterations;
         settings_.admin.password_hash =
             pbkdf2_sha256_hex(initial, settings_.admin.salt, settings_.admin.iterations);
         setup_password_ = initial;
         must_change_password_ = true;
+        setup_changed = true;
         dirty = true;
     } else {
         must_change_password_ = !has_password_change_audit();
+        if (must_change_password_) {
+            auto stored_setup = settings_store_.load_setup_password();
+            if (!stored_setup) {
+                return Result<Unit>::fail(stored_setup.error->code, stored_setup.error->message);
+            }
+            setup_password_ = *stored_setup.value;
+            if (setup_password_.empty()) {
+                // Upgrade from firmware that kept the password in RAM only, or
+                // a damaged key. Rotate the admin credentials so the device is
+                // not permanently locked out of the web UI.
+                const std::string initial = random_password(platform_, kSetupPasswordLength);
+                settings_.admin.salt = random_hex(platform_, kAdminSaltBytes);
+                settings_.admin.iterations = kAdminIterations;
+                settings_.admin.password_hash =
+                    pbkdf2_sha256_hex(initial, settings_.admin.salt, settings_.admin.iterations);
+                setup_password_ = initial;
+                setup_changed = true;
+                dirty = true;
+            }
+        } else {
+            setup_password_.clear();
+            // Remove a stale key after a completed password change.
+            (void)settings_store_.clear_setup_password();
+        }
     }
 
     if (settings_.network.ap_password.empty()) {
         settings_.network.ap_password = random_password(platform_, 12);
         dirty = true;
+    }
+    // Persist the setup password before credentials: if the settings write
+    // fails, the next boot regenerates credentials and overwrites this key.
+    if (setup_changed) {
+        auto saved_setup = settings_store_.save_setup_password(setup_password_);
+        if (!saved_setup) return saved_setup;
     }
     if (dirty) {
         auto saved = settings_store_.save(settings_);
@@ -911,6 +944,10 @@ Result<Unit> KaffeeServiceImpl::change_admin_password(const std::string& current
         settings_ = updated;
         setup_password_.clear();
         must_change_password_ = false;
+        // Best effort: the in-memory password is gone and a reboot with a
+        // completed audit record will not load this key again. If NVS erasure
+        // fails, the stale key is ignored and removed on the next boot.
+        (void)settings_store_.clear_setup_password();
         result = audit_locked("admin_password_changed", "{}", request_id, "admin");
         if (result) maybe_compact_locked();
     }

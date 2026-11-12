@@ -135,6 +135,10 @@ class IUiBackend {
     virtual Result<Unit> stop_ap() = 0;
     virtual Result<Unit> extend_ap(int seconds) = 0;
     virtual AppSettings app_settings() const = 0;
+    // First-run admin state. While must_change is true the device shows the
+    // persisted setup password so the admin can log in and change it.
+    virtual bool must_change_admin_password() const = 0;
+    virtual std::string setup_password() const = 0;
     // Device-side undo of the most recent member booking (actor "ui").
     virtual Result<Event> undo_booking(const std::string& event_id,
                                        const std::string& request_id) = 0;
@@ -227,9 +231,9 @@ class KaffeeService : public IUiBackend {
     virtual Result<Unit> change_admin_password(const std::string& current_password,
                                                const std::string& new_password,
                                                const std::string& request_id) = 0;
-    virtual bool must_change_admin_password() const = 0;
+    virtual bool must_change_admin_password() const override = 0;
     // Plaintext initial password, available only until it has been changed.
-    virtual std::string setup_password() const = 0;
+    virtual std::string setup_password() const override = 0;
 
     // --- Settings / time / AP ---
     // Returns the effective settings for API/UI consumption. The implementation

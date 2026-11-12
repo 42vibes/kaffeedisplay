@@ -155,6 +155,15 @@ class FailingSettingsStore final : public ISettingsStore {
     Result<Unit> reset() override {
         return inner.reset();
     }
+    Result<std::string> load_setup_password() override {
+        return inner.load_setup_password();
+    }
+    Result<Unit> save_setup_password(const std::string& password) override {
+        return inner.save_setup_password(password);
+    }
+    Result<Unit> clear_setup_password() override {
+        return inner.clear_setup_password();
+    }
 
     const Settings& stored() const {
         return inner.stored();
@@ -197,6 +206,7 @@ struct ServiceFixture {
                 pbkdf2_sha256_hex(kPassword, settings.admin.salt, settings.admin.iterations);
             settings.network.ap_password = "ap-secret";
             REQUIRE(static_cast<bool>(settings_store.save(settings)));
+            REQUIRE(static_cast<bool>(settings_store.save_setup_password(kPassword)));
         }
         auto created = KaffeeService::create(store, settings_store, platform);
         REQUIRE(static_cast<bool>(created));
@@ -232,6 +242,64 @@ TEST_CASE("first boot generates a setup password") {
     CHECK(session.value->token.size() == 32);
     CHECK(session.value->csrf_token.size() == 32);
     CHECK(session.value->token != session.value->csrf_token);
+}
+
+TEST_CASE("setup password survives a service reload") {
+    ServiceFixture fixture;
+    const std::string initial = fixture.service->setup_password();
+    REQUIRE(initial.size() == 16);
+    CHECK(fixture.settings_store.stored_setup_password() == initial);
+
+    fixture.service.reset();
+    auto created = KaffeeService::create(fixture.store, fixture.settings_store, fixture.platform);
+    REQUIRE(static_cast<bool>(created));
+    fixture.service = std::move(*created.value);
+    CHECK(fixture.service->must_change_admin_password());
+    CHECK(fixture.service->setup_password() == initial);
+    CHECK(static_cast<bool>(fixture.service->login("admin", initial, "10.0.0.9")));
+}
+
+TEST_CASE("changing the admin password clears the persisted setup password") {
+    ServiceFixture fixture(true);
+    REQUIRE(fixture.service->setup_password() == kPassword);
+    REQUIRE(static_cast<bool>(
+        fixture.service->change_admin_password(kPassword, "changed-password-1", "setup-1")));
+    CHECK_FALSE(fixture.service->must_change_admin_password());
+    CHECK(fixture.service->setup_password().empty());
+    CHECK(fixture.settings_store.stored_setup_password().empty());
+
+    fixture.service.reset();
+    auto created = KaffeeService::create(fixture.store, fixture.settings_store, fixture.platform);
+    REQUIRE(static_cast<bool>(created));
+    fixture.service = std::move(*created.value);
+    CHECK_FALSE(fixture.service->must_change_admin_password());
+    CHECK(fixture.service->setup_password().empty());
+    CHECK_FALSE(static_cast<bool>(fixture.service->login("admin", kPassword, "10.0.0.10")));
+    CHECK(static_cast<bool>(fixture.service->login("admin", "changed-password-1", "10.0.0.11")));
+}
+
+TEST_CASE("upgrade without a stored setup password rotates admin credentials") {
+    TempDir dir;
+    FileEventStore store((dir.path / "events").string());
+    MemorySettingsStore settings_store;
+    FakePlatform platform;
+    configure_platform(platform);
+
+    Settings seeded;
+    seeded.admin.username = "admin";
+    seeded.admin.salt = "00112233445566778899aabbccddeeff";
+    seeded.admin.iterations = 1000;
+    seeded.admin.password_hash =
+        pbkdf2_sha256_hex(kPassword, seeded.admin.salt, seeded.admin.iterations);
+    REQUIRE(static_cast<bool>(settings_store.save(seeded)));
+
+    auto created = KaffeeService::create(store, settings_store, platform);
+    REQUIRE(static_cast<bool>(created));
+    auto service = std::move(*created.value);
+    CHECK(service->must_change_admin_password());
+    CHECK(service->setup_password().size() == 16);
+    CHECK_FALSE(static_cast<bool>(service->login("admin", kPassword, "10.0.0.12")));
+    CHECK(static_cast<bool>(service->login("admin", service->setup_password(), "10.0.0.13")));
 }
 
 TEST_CASE("sessions, csrf and monotonic expiry") {
@@ -542,6 +610,10 @@ TEST_CASE("backup excludes secrets and restores state") {
     REQUIRE(static_cast<bool>(backup));
     CHECK(backup.value->find("ap-secret") == std::string::npos);
     CHECK(backup.value->find("password_hash") == std::string::npos);
+    const std::string setup_password = fixture.service->setup_password();
+    REQUIRE_FALSE(setup_password.empty());
+    CHECK(backup.value->find(setup_password) == std::string::npos);
+    CHECK(backup.value->find("setup_password") == std::string::npos);
 
     const auto parsed = nlohmann::json::parse(*backup.value);
     CHECK(parsed["format"] == "kaffeekasse-backup");

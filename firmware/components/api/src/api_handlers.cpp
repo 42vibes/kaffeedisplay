@@ -291,7 +291,8 @@ json session_json(KaffeeService& service, const Session& session) {
         {"username", service.settings().admin.username.empty() ? std::string("admin")
                                                                : service.settings().admin.username},
         {"csrf_token", session.csrf_token},
-        {"expires_at", session.expires_at}};
+        {"expires_at", session.expires_at},
+        {"must_change_password", service.must_change_admin_password()}};
 }
 
 esp_err_t handle_login(RequestContext& ctx) {

@@ -41,6 +41,11 @@ mismatch instead of mis-routing.
   `POST /auth/logout`, `GET /auth/me`, `GET /settings` and
   `POST /settings/password` are allowed. Everything else returns
   `403 password_change_required` so the SPA can force the first-login change.
+  `GET /auth/me` and `POST /auth/login` include `must_change_password` so the
+  SPA can route to the forced change form before rendering the shell.
+- The generated initial password is persisted in NVS (dedicated key, not in
+  `Settings`, backups or the journal) and shown on device page 3 until the
+  change succeeds. It survives reboots.
 - A successful password change calls `logout()` for the current token and clears
   the cookie. **TODO(T-001):** `change_admin_password()` must clear all sessions
   in the service; the API cannot enumerate other tokens without a parallel
