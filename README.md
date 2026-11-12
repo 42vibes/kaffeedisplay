@@ -66,6 +66,21 @@ See [UI specification](docs/ui.md) and
 > `npm --prefix web run screenshots`. This repository's `main` branch keeps
 > the original images until the feature is merged.
 
+## Preview in Docker (no host installation)
+
+Use the actual LVGL display and the separate admin test UI **from your browser**:
+
+```sh
+docker compose -f compose.preview.yml up --build
+```
+
+- Device display (noVNC): http://localhost:6080/vnc.html?autoconnect=1
+- Admin interface: http://localhost:5173 (mock password `kaffee`)
+
+Both previews run in containers. The simulator and the admin mock have separate
+demo datasets. See [container preview guide](docs/container-preview.md) for
+details and limitations.
+
 ## Quick start
 
 ```sh
@@ -101,6 +116,7 @@ make flash
 | `docs/api/openapi.yaml` | Admin REST contract |
 | `docs/api/reports.md` | Expected report JSON payload shape and CSV conventions |
 | `docs/ui.md` | Device and admin UI specification |
+| `docs/container-preview.md` | Run LVGL and admin test UI in Docker and a browser |
 | `docs/security.md` | Threat model, auth, AP policy |
 | `docs/operations.md` | Provisioning, backup, OTA, recovery |
 | `docs/serial-cli.md` | Serial protocol, clock/backup/reset commands |
