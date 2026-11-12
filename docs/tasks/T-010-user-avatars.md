@@ -7,7 +7,7 @@ Branch: `feature/user-avatars`
 
 ## Scope
 
-- 30 static firmware presets, five palettes × six simple motifs, and visible initials.
+- 30 distinct offline cartoon bitmap illustrations (animals, objects and coffee motifs), paired with visible initials on device.
 - New users receive a server-assigned random preset by default (excluding the immediately preceding new user's preset); explicit IDs or initials-only (0) remain selectable by admin.
 - Persist avatar IDs (0..30) using compatible user events.
 - Update REST/OpenAPI, tests, ADR and documentation.
