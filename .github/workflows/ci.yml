@@ -104,7 +104,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build browser-accessible LVGL Docker preview
         run: docker build -f tools/preview/Dockerfile -t kaffeekasse-preview .
-      - name: Verify real interactive X11 pixels and noVNC server
+      - name: Verify nonblack X11 frame and noVNC response
         run: |
           docker run -d --name kaffeekasse-preview -p 127.0.0.1:6080:6080 kaffeekasse-preview
           trap 'docker logs kaffeekasse-preview || true; docker rm -f kaffeekasse-preview || true' EXIT
@@ -113,33 +113,7 @@ jobs:
               curl --fail --silent --show-error http://127.0.0.1:6080/vnc.html > /dev/null
               exit 0
             fi
-            if ! docker inspect -f '{{.State.Running}}' kaffeekasse-preview | grep -q '^true
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download web build
-        uses: actions/download-artifact@v4
-        with:
-          name: web-dist
-          path: web/dist
-      - name: Embed web assets
-        run: |
-          python3 tools/embed_web.py
-          python3 tools/embed_web.py --check
-      - name: Build firmware
-        run: |
-          docker run --rm \
-            -v "$PWD/firmware:/project" \
-            -w /project \
-            espressif/idf:release-v5.5 \
-            bash -lc '. "$IDF_PATH/export.sh" && idf.py build'
-      - name: Firmware and bundle size budgets
-        run: python3 tools/check_sizes.py
-      - uses: actions/upload-artifact@v4
-        with:
-          name: firmware
-          path: firmware/build/*.bin
-          if-no-files-found: error
-; then
+            if [ "$(docker inspect -f '{{.State.Running}}' kaffeekasse-preview)" != "true" ]; then
               echo "LVGL preview container exited unexpectedly" >&2
               exit 1
             fi
