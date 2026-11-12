@@ -18,10 +18,9 @@ lv_obj_t* make_avatar(lv_obj_t* parent, const std::string& name, const std::stri
                       int avatar_id = 0) {
     const lv_image_dsc_t* artwork = avatar_art(avatar_id);
     const bool preset = artwork != nullptr;
-    lv_obj_t* circle = theme::make_circle(
-        parent, size,
-        preset ? theme::color(theme::COLOR_SURFACE)
-               : parse_hex_color(color, theme::COLOR_ACCENT));
+    const lv_color_t fill = preset ? theme::color(theme::COLOR_SURFACE)
+                                   : parse_hex_color(color, theme::COLOR_ACCENT);
+    lv_obj_t* circle = theme::make_circle(parent, size, fill);
 
     if (preset) {
         lv_obj_set_style_clip_corner(circle, true, 0);
@@ -46,9 +45,8 @@ lv_obj_t* make_avatar(lv_obj_t* parent, const std::string& name, const std::stri
         lv_obj_center(initials_label);
         lv_obj_align(badge, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     } else {
-        lv_obj_t* text = theme::make_label(circle, initials(name).c_str(),
-                                           theme::font_body_bold(),
-                                           theme::color(theme::COLOR_BG));
+        lv_obj_t* text = theme::make_label(
+            circle, initials(name).c_str(), theme::font_body_bold(), theme::color(theme::COLOR_BG));
         lv_obj_center(text);
     }
     return circle;
