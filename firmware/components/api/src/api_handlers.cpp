@@ -73,9 +73,13 @@ Result<bool> get_bool(const json& body, const char* key, bool fallback) {
 }
 
 bool validate_display(const DisplaySettings& display, Error& error) {
-    if (display.rotation != 0 && display.rotation != 90 && display.rotation != 180 &&
-        display.rotation != 270) {
-        error = Error{"invalid_input", "Rotation muss 0, 90, 180 oder 270 sein"};
+    // Rotated modes render incorrectly with this panel and stack: esp_lvgl_port
+    // 2.9.0 cannot rotate in direct mode, esp_lcd's RGB swap_xy is a no-op on a
+    // panel framebuffer and LVGL's software renderer ignores matrix rotation.
+    // Rejecting the value keeps a device out of a visibly broken state; see
+    // T-011 for the rotated-flush path that would lift this.
+    if (display.rotation != 0) {
+        error = Error{"invalid_input", "Drehung wird von diesem Display nicht unterstützt"};
         return false;
     }
     if (display.brightness_active < 5 || display.brightness_active > 100) {
@@ -917,6 +921,21 @@ esp_err_t handle_settings_put(RequestContext& ctx) {
     KaffeeService& service = ctx.server.service();
     Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
+
+    // settings_from_json() is lenient so that old or hand-edited backups keep
+    // loading; a live PUT must fail loudly instead of silently keeping the
+    // stored value.
+    if (body.value->contains("app") && (*body.value)["app"].is_object()) {
+        const json& app = (*body.value)["app"];
+        if (app.contains("user_sort") && !app["user_sort"].is_null()) {
+            const std::string order =
+                app["user_sort"].is_string() ? app["user_sort"].get<std::string>() : std::string();
+            if (order != "creation" && order != "usage") {
+                return send_error(ctx.req, 400, "invalid_input",
+                                  "Benutzer-Reihenfolge ist ungültig");
+            }
+        }
+    }
 
     // PUT applies the provided subtrees and keeps omitted values. This matches
     // the all-optional Settings schema; write-only secrets are never cleared by

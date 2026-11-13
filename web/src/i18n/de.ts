@@ -401,6 +401,9 @@ export const de = {
   // settings
   displaySection: "Anzeige",
   rotation: "Ausrichtung",
+  rotationSupported: "Nur 0° wird von diesem Display unterstützt.",
+  rotationUnsupported:
+    "90°, 180° und 270° werden von diesem Display nicht unterstützt; die Einstellung bleibt bei 0°.",
   brightnessActive: "Helligkeit aktiv",
   brightnessIdle: "Helligkeit Ruhe",
   dimTimeout: "Dimmen nach",
@@ -426,6 +429,11 @@ export const de = {
   sntpServer: "SNTP-Server",
   appSection: "Kasse",
   guestEnabled: "Gastverkauf erlauben",
+  userSortLabel: "Reihenfolge der Benutzer auf dem Gerät",
+  userSortCreation: "Wie angelegt",
+  userSortUsage: "Meistgebuchte zuerst",
+  userSortHint:
+    "„Meistgebuchte zuerst“ zählt die Buchungen des laufenden Monats. Wer oft bucht, steht dann oben auf Seite 1.",
   maxOpenDebt: "Maximaler offener Betrag",
   lowBalanceWarning: "Warnschwelle Guthaben",
   generalSection: "Allgemein",
