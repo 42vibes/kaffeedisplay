@@ -23,6 +23,7 @@ struct Options {
     int rotation = 0;
     std::string state = "idle";
     bool click_test = false;
+    bool standby_demo = false;
     bool help = false;
 };
 
@@ -39,6 +40,7 @@ void print_usage(const char* argv0) {
         "Usage: %s [--page 1|2|3] [--rotation 0|90|180|270]\n"
         "          [--screenshot FILE [--state idle|selected|toast|ap|standby]]\n"
         "          [--click-test]\n\n"
+        "          [--standby-demo] (3s dim, no auto-off; simulator only)\n"
         "Mouse = touch. Keys: 1/2/3 pages, r rotation, +/- brightness, q quit.\n",
         argv0);
 }
@@ -67,6 +69,8 @@ bool parse_options(int argc, char** argv, Options* options) {
             if (!next(&options->state)) return false;
         } else if (arg == "--click-test") {
             options->click_test = true;
+        } else if (arg == "--standby-demo") {
+            options->standby_demo = true;
         } else {
             std::fprintf(stderr, "Unknown argument: %s\n", arg.c_str());
             return false;
@@ -123,6 +127,16 @@ int main(int argc, char** argv) {
 
     sim::FakeBackend backend;
     backend.set_rotation(options.rotation);
+    if (options.standby_demo && !screenshot_mode) {
+        // In Docker the ESP32 backlight-off circuit is absent. For a clear
+        // visible demonstration, show the animated scene after 3 seconds and
+        // keep the steam running until the first mouse tap. Real-device
+        // dim/off settings and all simulator test cases stay unchanged.
+        kaffee::DisplaySettings demo = backend.display_settings();
+        demo.dim_timeout_s = 3;
+        demo.screen_off_timeout_s = 0;
+        backend.apply_display_settings(demo);
+    }
     if (options.state == "ap") backend.start_ap();
 
     auto app_result = kaffee::ui::UiApp::create(backend);
