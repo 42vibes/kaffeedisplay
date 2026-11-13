@@ -3,8 +3,8 @@
 Status: in-progress
 Track: embedded UI
 Owner: 42vibes
-Branch: `feature/animated-coffee-standby`
-PR: [Draft #3 on fork](https://github.com/42vibes/kaffeedisplay/pull/3)
+Branch: `codex/animated-coffee-standby-upstream`
+PR: Draft for upstream (pending creation)
 
 ## Scope
 
