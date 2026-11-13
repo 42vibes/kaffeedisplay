@@ -44,11 +44,13 @@ dot to change pages; product taps never trigger navigation.
 
 The existing `dim_timeout_s`, `brightness_idle` and
 `screen_off_timeout_s` settings are owned by the board power task, not by
-this UI. While dimmed, the top-layer `Kaffeepause` overlay displays a native
-LVGL cup and three animated steam strokes. The animation updates approximately
-11 times per second without image frames, allocations in the timer callback,
-or external storage. When the board's screen-off threshold is reached, the
-steam timer is paused. The overlay remains to intercept the first wake tap,
+this UI. While dimmed, the top-layer `Kaffeepause` overlay displays a
+fine-line porcelain cup and **three individually animated steam strokes**.
+Each fades in, drifts upward, fades out, then remains invisible until its
+next turn; the three phases are offset by one third of the cycle (every
+3.2 seconds). A shared timer runs at 80 ms intervals with no image frames,
+allocations per frame or external storage. When the board's screen-off
+threshold is reached, the steam timer is paused. The overlay remains to intercept the first wake tap,
 so an invisible tap never accidentally books a drink.
 
 The overlay is suppressed while the AP is active or the display test pattern
