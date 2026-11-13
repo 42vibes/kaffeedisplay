@@ -9,7 +9,7 @@ PR: [Draft #3 on fork](https://github.com/42vibes/kaffeedisplay/pull/3)
 ## Scope
 
 - Show a tasteful coffee cup with three rising steam strokes on the 480×480 display after the existing administrative dim timeout.
-- Draw the cup and animate steam using native LVGL primitives only (no sprite sheet, GIF or compressed full-screen images).
+- Draw the 3D-shaded porcelain cup from editable SVG artwork, precompiled as one compact LVGL I8 indexed bitmap. Animate only the three steam wisps with native LVGL lines. No sprite sheet, GIF or runtime SVG renderer.
 - Reuse `DisplaySettings.dim_timeout_s`, `brightness_idle` and `screen_off_timeout_s` unchanged.
 - Stop steam updates after screen-off; preserve a full-screen wake target so an invisible tap never books a product.
 - Keep the existing AP stay-awake behavior and avoid touching user/avatar, accounting and REST contracts.
