@@ -75,6 +75,14 @@ UiAppImpl::~UiAppImpl() {
         housekeeping_timer_ = nullptr;
     }
     remove_test_pattern();
+    if (standby_timer_ != nullptr) {
+        lv_timer_delete(standby_timer_);
+        standby_timer_ = nullptr;
+    }
+    if (standby_overlay_ != nullptr) {
+        lv_obj_delete(standby_overlay_);
+        standby_overlay_ = nullptr;
+    }
     if (toast_ != nullptr) {
         lv_obj_delete(toast_);
         toast_ = nullptr;
@@ -124,6 +132,7 @@ void UiAppImpl::build() {
     build_page_system(tiles_[2]);
     build_page_dots();
     build_toast();
+    build_standby();
 }
 
 lv_obj_t* UiAppImpl::build_header(lv_obj_t* parent, const char* title, lv_obj_t** clock_label) {
@@ -363,6 +372,14 @@ bool UiAppImpl::guest_selected() const {
     return guest_mode_;
 }
 
+bool UiAppImpl::standby_active() const {
+    return standby_active_;
+}
+
+int UiAppImpl::standby_steam_y() const {
+    return steam_[0] != nullptr ? lv_obj_get_y(steam_[0]) : 0;
+}
+
 void UiAppImpl::debug_select_user(const std::string& user_id) {
     auto user = backend_.find_user(user_id);
     if (user) select_user(*user);
@@ -415,6 +432,7 @@ void UiAppImpl::housekeeping() {
         update_headers();
         refresh_system_page();
     }
+    update_standby();
 }
 
 void UiAppImpl::apply_hold_state() {
@@ -438,7 +456,8 @@ std::string UiAppImpl::next_request_id(const char* prefix) {
 }
 
 void UiAppImpl::wake() {
-    lv_display_trigger_activity(nullptr);
+    lv_display_trigger_activity(lv_display_get_default());
+    hide_standby();
 }
 
 void UiAppImpl::remove_test_pattern() {
@@ -453,6 +472,7 @@ void UiAppImpl::remove_test_pattern() {
 }
 
 void UiAppImpl::show_test_pattern() {
+    wake();
     remove_test_pattern();
     lv_obj_t* overlay = lv_obj_create(lv_layer_top());
     test_overlay_ = overlay;
