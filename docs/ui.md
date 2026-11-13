@@ -40,6 +40,23 @@ dot to change pages; product taps never trigger navigation.
 - Display: read-only rotation/brightness/timeouts. Admin changes them in the web.
 - No balances or financial totals.
 
+### Idle power-save screen
+
+The existing `dim_timeout_s`, `brightness_idle` and
+`screen_off_timeout_s` settings are owned by the board power task, not by
+this UI. While dimmed, the top-layer `Kaffeepause` overlay displays a native
+LVGL cup and three animated steam strokes. The animation updates approximately
+11 times per second without image frames, allocations in the timer callback,
+or external storage. When the board's screen-off threshold is reached, the
+steam timer is paused. The overlay remains to intercept the first wake tap,
+so an invisible tap never accidentally books a drink.
+
+The overlay is suppressed while the AP is active or the display test pattern
+is open. It disappears on touch/activity. With dim and screen-off timeouts both
+disabled, the overlay never appears. Rotation and brightness remain controlled
+from the existing admin settings. See
+[`06-coffee-standby.png`](ui/screenshots/06-coffee-standby.png).
+
 ### Theme
 
 Dark espresso: background `#1A1412`, surface `#241B18`, text `#F5EFE6`, accent

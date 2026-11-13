@@ -40,6 +40,30 @@ The device UI is 480×480, German, espresso-themed.
 |---|---|
 | ![Statistik](docs/ui/screenshots/04-leaderboard.png) | ![System](docs/ui/screenshots/05-system-ap-qr.png) |
 
+### Animated low-power coffee standby
+
+After the existing admin-configured **dim timeout** (default 60 seconds),
+the 480×480 kiosk shows a coffee cup with gently rising steam at the
+configured idle brightness. The cup and animation are native LVGL objects;
+there are no GIF frames, external images, runtime downloads, or extra codecs.
+At the configured **screen-off timeout** (default 600 seconds), the steam
+animation pauses. The dark wake overlay remains to consume the first touch
+without triggering a purchase. The admin can change both timeouts and the
+idle brightness in the existing web **Einstellungen** page; setting both
+timeouts to zero disables the standby overlay.
+
+![Coffee standby on device](docs/ui/screenshots/06-coffee-standby.png)
+
+**Docker preview:** `docker compose -f compose.preview.yml up --build` —
+open `http://localhost:6080/vnc.html?autoconnect=1`, leave the
+simulator untouched for about 60 seconds to watch the steam move.
+See [Docker preview instructions](docs/container-preview.md).
+
+For reproducible simulator evidence:
+`./sim/build/kaffeekasse-sim --screenshot /tmp/coffee.png --state standby`.
+The simulator's deterministic screenshot jumps past the idle timeout, rather
+than requiring a real wait. See [the screenshot gallery](docs/ui/screenshots/README.md).
+
 ### Admin backend
 
 | Übersicht | Berichte |
@@ -85,6 +109,7 @@ make flash
 | `docs/api/openapi.yaml` | Admin REST contract |
 | `docs/api/reports.md` | Expected report JSON payload shape and CSV conventions |
 | `docs/ui.md` | Device and admin UI specification |
+| `docs/container-preview.md` | Docker browser preview of the LVGL standby screen |
 | `docs/security.md` | Threat model, auth, AP policy |
 | `docs/operations.md` | Provisioning, backup, OTA, recovery |
 | `docs/serial-cli.md` | Serial protocol, clock/backup/reset commands |

@@ -42,6 +42,7 @@ add_executable(kaffeekasse-sim
   ${DOMAIN_DIR}/src/json.cpp
   ${DOMAIN_DIR}/src/sha256.cpp
   ${UI_DIR}/src/ui_app.cpp
+  ${UI_DIR}/src/standby.cpp
   ${UI_DIR}/src/page_book.cpp
   ${UI_DIR}/src/page_stats.cpp
   ${UI_DIR}/src/page_system.cpp

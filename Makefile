@@ -114,6 +114,7 @@ screenshots: sim-build
 	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/03-booking-toast.png --page 1 --state toast
 	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/04-leaderboard.png --page 2 --state idle
 	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/05-system-ap-qr.png --page 3 --state ap
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/06-coffee-standby.png --page 1 --state standby
 
 screenshots-check: sim-build
 	rm -rf $(SCREENSHOT_CHECK_DIR)

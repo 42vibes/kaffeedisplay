@@ -37,7 +37,7 @@ uint32_t tick_cb() {
 void print_usage(const char* argv0) {
     std::printf(
         "Usage: %s [--page 1|2|3] [--rotation 0|90|180|270]\n"
-        "          [--screenshot FILE [--state idle|selected|toast|ap]]\n"
+        "          [--screenshot FILE [--state idle|selected|toast|ap|standby]]\n"
         "          [--click-test]\n\n"
         "Mouse = touch. Keys: 1/2/3 pages, r rotation, +/- brightness, q quit.\n",
         argv0);
@@ -78,7 +78,7 @@ bool parse_options(int argc, char** argv, Options* options) {
         return false;
     }
     if (options->state != "idle" && options->state != "selected" && options->state != "toast" &&
-        options->state != "ap") {
+        options->state != "ap" && options->state != "standby") {
         return false;
     }
     return true;
@@ -160,6 +160,19 @@ int main(int argc, char** argv) {
         for (int frame = 0; frame < 60; ++frame) {
             g_fixed_tick += 16;
             lv_timer_handler();
+        }
+        if (options.state == "standby") {
+            // Capture the real idle state without waiting one minute in CI.
+            // The board would dim the backlight at the same configured time.
+            g_fixed_tick += 61'000;
+            for (int frame = 0; frame < 18; ++frame) {
+                g_fixed_tick += 16;
+                lv_timer_handler();
+            }
+            if (!control->standby_active()) {
+                std::fprintf(stderr, "Standby did not activate after dim timeout\n");
+                return 1;
+            }
         }
         if (!display.save_screenshot(options.screenshot)) {
             std::fprintf(stderr, "Failed to write screenshot: %s\n", options.screenshot.c_str());
