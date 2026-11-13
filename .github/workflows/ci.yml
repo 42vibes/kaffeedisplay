@@ -84,8 +84,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y clang-format
+      - run: sudo apt-get update && sudo apt-get install -y clang-format python3-cairosvg python3-pil
       - run: make fmt-check
+      - name: Check SVG-derived I8 resource is reproducible
+        run: /usr/bin/python3 tools/generate_standby_cup.py --check
 
   simulator:
     runs-on: ubuntu-24.04
