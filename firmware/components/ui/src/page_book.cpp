@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 
+#include "avatar_art_generated.hpp"
 #include "format.hpp"
 #include "strings.hpp"
 #include "theme.hpp"
@@ -11,13 +12,33 @@ namespace kaffee::ui {
 
 namespace {
 
-lv_obj_t* make_avatar(lv_obj_t* parent, const std::string& name, const std::string& color,
-                      int size) {
-    lv_obj_t* circle =
-        theme::make_circle(parent, size, parse_hex_color(color, theme::COLOR_ACCENT));
-    lv_obj_t* text = theme::make_label(circle, initials(name).c_str(), theme::font_body_bold(),
-                                       theme::color(theme::COLOR_BG));
-    lv_obj_center(text);
+// Each preset is a distinct 38x38 I4 indexed illustration with an ARGB8888
+// palette, held in flash and drawn at runtime; no decoder or upload is involved.
+// Users without a preset fall back to coloured initials.
+lv_obj_t* make_avatar(lv_obj_t* parent, const std::string& name, const std::string& color, int size,
+                      int avatar_id = 0) {
+    const lv_image_dsc_t* artwork = avatar_art(avatar_id);
+    const bool preset = artwork != nullptr;
+    const lv_color_t fill =
+        preset ? theme::color(theme::COLOR_SURFACE) : parse_hex_color(color, theme::COLOR_ACCENT);
+    lv_obj_t* circle = theme::make_circle(parent, size, fill);
+
+    if (preset) {
+        // The I4 plate is baked to the card surface colour, so the disc blends
+        // into the circle and only the motif is visible. The name is always
+        // shown next to the avatar, so no initials badge is drawn on top: at
+        // 42-46 px it read as a notch cut out of the artwork.
+        lv_obj_set_style_clip_corner(circle, true, 0);
+        lv_obj_t* image = lv_image_create(circle);
+        lv_image_set_src(image, artwork);
+        lv_obj_center(image);
+        lv_obj_set_clickable(image, false);
+        lv_obj_set_scrollable(image, false);
+    } else {
+        lv_obj_t* text = theme::make_label(circle, initials(name).c_str(), theme::font_body_bold(),
+                                           theme::color(theme::COLOR_BG));
+        lv_obj_center(text);
+    }
     return circle;
 }
 
@@ -71,17 +92,22 @@ void UiAppImpl::refresh_book_page() {
         lv_obj_set_style_pad_all(card, 10, 0);
         lv_obj_set_style_pad_column(card, 10, 0);
 
-        lv_obj_t* avatar = guest_mode_ ? make_avatar(card, strings::BOOK_GUEST, "#D4A373", 46)
-                                       : make_avatar(card, user->name, user->color, 46);
-        (void)avatar;
+        if (guest_mode_) {
+            make_avatar(card, strings::BOOK_GUEST, "#D4A373", 46);
+        } else {
+            make_avatar(card, user->name, user->color, 46, user->avatar_id);
+        }
 
         lv_obj_t* names = theme::make_column(card, 0);
         lv_obj_set_width(names, LV_SIZE_CONTENT);
         lv_obj_set_flex_grow(names, 1);
         lv_obj_set_flex_align(names, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START,
                               LV_FLEX_ALIGN_CENTER);
-        theme::make_label(names, guest_mode_ ? strings::BOOK_GUEST : user->name.c_str(),
-                          theme::font_title(), theme::color(theme::COLOR_TEXT));
+        lv_obj_t* card_name =
+            theme::make_label(names, guest_mode_ ? strings::BOOK_GUEST : user->name.c_str(),
+                              theme::font_title(), theme::color(theme::COLOR_TEXT));
+        // Names may be up to 40 characters; the avatar takes 56 px of the row.
+        theme::set_ellipsis(card_name);
         if (guest_mode_) {
             theme::make_label(names, strings::BOOK_GUEST_HINT, theme::font_small(),
                               theme::color(theme::COLOR_MUTED));
@@ -207,7 +233,7 @@ void UiAppImpl::refresh_book_page() {
         lv_obj_set_style_pad_row(item, 5, 0);
         theme::set_pressed_feedback(item, theme::color(theme::COLOR_SURFACE_ALT));
 
-        make_avatar(item, member.name, member.color, 42);
+        make_avatar(item, member.name, member.color, 42, member.avatar_id);
         lv_obj_t* name = theme::make_label(item, member.name.c_str(), theme::font_body(),
                                            theme::color(theme::COLOR_TEXT));
         lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);

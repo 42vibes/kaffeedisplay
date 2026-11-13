@@ -95,6 +95,16 @@ async function main() {
       await page.goto(`${BASE}${route}`);
       await page.getByRole("heading", { name: heading }).waitFor();
       await shot(page, file);
+      if (route === "/users") {
+        await page.getByRole("button", { name: "Benutzer anlegen" }).click();
+        const dialog = page.getByRole("dialog");
+        await dialog.waitFor();
+        await dialog.getByLabel("Name").fill("Neuer Benutzer");
+        await shot(page, "web-avatar-picker.png", false);
+        await dialog.getByRole("button", { name: "Speichern" }).click();
+        await page.getByText("Benutzer angelegt.").waitFor();
+        await shot(page, "web-user-random-avatar.png");
+      }
     }
 
     await page.goto(`${BASE}/system`);

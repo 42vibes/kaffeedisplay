@@ -111,6 +111,33 @@ std::string make_id(IPlatform& platform, std::string_view prefix) {
     return std::string(prefix) + "_" + buffer;
 }
 
+// Pick a preset uniformly from 1..30, preferring presets no active user has.
+// Distinct motifs are the point of the feature: assigning a second raccoon to a
+// four-user fund defeats it. When every preset is taken, fall back to any of
+// them. Only the chosen ID enters the journal, so replays stay deterministic.
+int random_user_avatar(IPlatform& platform, const std::vector<User>& users) {
+    bool taken[kMaxUserAvatarId + 1] = {};
+    int used = 0;
+    for (const User& user : users) {
+        if (!user.active) continue;
+        if (user.avatar_id < 1 || user.avatar_id > kMaxUserAvatarId) continue;
+        if (taken[user.avatar_id]) continue;
+        taken[user.avatar_id] = true;
+        ++used;
+    }
+    if (used >= kMaxUserAvatarId) {
+        return static_cast<int>(platform.random_u64() % kMaxUserAvatarId) + 1;
+    }
+    const int available = kMaxUserAvatarId - used;
+    int pick = static_cast<int>(platform.random_u64() % static_cast<uint64_t>(available));
+    for (int id = 1; id <= kMaxUserAvatarId; ++id) {
+        if (taken[id]) continue;
+        if (pick == 0) return id;
+        --pick;
+    }
+    return 1;
+}
+
 std::string random_hex(IPlatform& platform, size_t bytes) {
     static constexpr char kHex[] = "0123456789abcdef";
     std::string out;
@@ -200,10 +227,10 @@ class KaffeeServiceImpl final : public KaffeeService {
 
     // --- Admin operations ---
     Result<Event> create_user(const std::string& name, const std::string& color,
-                              const std::string& request_id) override;
+                              const std::string& request_id, int avatar_id) override;
     Result<Event> update_user(const std::string& user_id, const std::string& name,
-                              const std::string& color, bool active,
-                              const std::string& request_id) override;
+                              const std::string& color, bool active, const std::string& request_id,
+                              int avatar_id) override;
     Result<Event> archive_user(const std::string& user_id, const std::string& request_id) override;
     Result<Event> create_product(const std::string& name, const std::string& category,
                                  const std::string& icon, const std::string& color,
@@ -685,21 +712,24 @@ Result<Event> KaffeeServiceImpl::guest_sale(const std::string& product_id,
 }
 
 Result<Event> KaffeeServiceImpl::create_user(const std::string& name, const std::string& color,
-                                             const std::string& request_id) {
+                                             const std::string& request_id, int avatar_id) {
     return mutate([&]() -> Result<Event> {
         if (auto existing = existing_request_locked(request_id))
             return Result<Event>::ok(*existing);
-        return ledger_.create_user(name, color, request_id, now(), time_source());
+        const int selected_avatar =
+            avatar_id == -1 ? random_user_avatar(platform_, ledger_.users()) : avatar_id;
+        return ledger_.create_user(name, color, request_id, now(), time_source(), selected_avatar);
     });
 }
 
 Result<Event> KaffeeServiceImpl::update_user(const std::string& user_id, const std::string& name,
                                              const std::string& color, bool active,
-                                             const std::string& request_id) {
+                                             const std::string& request_id, int avatar_id) {
     return mutate([&]() -> Result<Event> {
         if (auto existing = existing_request_locked(request_id))
             return Result<Event>::ok(*existing);
-        return ledger_.update_user(user_id, name, color, active, request_id, now(), time_source());
+        return ledger_.update_user(user_id, name, color, active, request_id, now(), time_source(),
+                                   avatar_id);
     });
 }
 

@@ -339,8 +339,16 @@ esp_err_t handle_users_create(RequestContext& ctx) {
         return send_error(ctx.req, 400, "invalid_input", "Farbe muss das Format #RRGGBB haben");
     }
 
-    Result<Event> event =
-        ctx.server.service().create_user(trimmed_name, user_color, ctx.request_id);
+    Result<Cents> avatar = get_cents(*body.value, "avatar_id", false, 0, kMaxUserAvatarId);
+    if (!avatar) return send_service_error(ctx.req, result_error(avatar));
+
+    // An omitted or null avatar_id requests a random preset; an explicit zero
+    // uses initials. Non-null values were range-checked above.
+    const bool has_avatar =
+        body.value->contains("avatar_id") && !(*body.value)["avatar_id"].is_null();
+    const int avatar_id = has_avatar ? static_cast<int>(*avatar.value) : -1;
+    auto& service = ctx.server.service();
+    auto event = service.create_user(trimmed_name, user_color, ctx.request_id, avatar_id);
     if (!event) return send_service_error(ctx.req, result_error(event));
     auto user = ctx.server.service().find_user(event.value->user_id);
     if (!user) return send_error(ctx.req, 500, "internal_error", "Benutzer nicht gefunden");
@@ -359,6 +367,8 @@ esp_err_t handle_users_update(RequestContext& ctx) {
     if (!name) return send_service_error(ctx.req, result_error(name));
     Result<std::string> color = get_string(*body.value, "color", false, 7);
     if (!color) return send_service_error(ctx.req, result_error(color));
+    Result<Cents> avatar = get_cents(*body.value, "avatar_id", false, 0, kMaxUserAvatarId);
+    if (!avatar) return send_service_error(ctx.req, result_error(avatar));
     Result<bool> active = get_bool(*body.value, "active", existing->active);
     if (!active) return send_service_error(ctx.req, result_error(active));
 
@@ -371,8 +381,13 @@ esp_err_t handle_users_update(RequestContext& ctx) {
         return send_error(ctx.req, 400, "invalid_input", "Farbe muss das Format #RRGGBB haben");
     }
 
-    Result<Event> event =
-        service.update_user(id, new_name, new_color, *active.value, ctx.request_id);
+    // -1 means the PATCH left the avatar out (absent or null): preserve the
+    // current choice. An explicit zero resets to initials.
+    const bool has_avatar =
+        body.value->contains("avatar_id") && !(*body.value)["avatar_id"].is_null();
+    const int avatar_id = has_avatar ? static_cast<int>(*avatar.value) : -1;
+    const bool is_active = *active.value;
+    auto event = service.update_user(id, new_name, new_color, is_active, ctx.request_id, avatar_id);
     if (!event) return send_service_error(ctx.req, result_error(event));
     auto updated = service.find_user(id);
     if (!updated) return send_error(ctx.req, 404, "not_found", "Benutzer nicht gefunden");

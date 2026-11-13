@@ -1,0 +1,24 @@
+# Only bound to localhost: noVNC uses no password and MUST NOT be publicly exposed.
+services:
+  display:
+    build:
+      context: .
+      dockerfile: tools/preview/Dockerfile
+    ports:
+      - "127.0.0.1:6080:6080"
+
+  admin:
+    image: node:22-bookworm
+    working_dir: /work/web
+    volumes:
+      - ./:/work
+      - preview_node_modules:/work/web/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+    command: >
+      sh -ec 'npm ci;
+      npm run mock &
+      exec npm run dev -- --host 0.0.0.0 --port 5173'
+
+volumes:
+  preview_node_modules:

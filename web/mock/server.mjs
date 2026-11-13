@@ -10,13 +10,14 @@ const CSRF_TOKEN = "mock-csrf-token";
 // ---------------------------------------------------------------------------
 
 const users = [
-  { id: "usr_ada", name: "Ada", color: "#D4A373", active: true, created_at: now - 86400 * 90 },
-  { id: "usr_bob", name: "Bob", color: "#8FBC8F", active: true, created_at: now - 86400 * 60 },
-  { id: "usr_cara", name: "Cara", color: "#7FA7C9", active: true, created_at: now - 86400 * 30 },
+  { id: "usr_ada", name: "Ada", color: "#D4A373", avatar_id: 1, active: true, created_at: now - 86400 * 90 },
+  { id: "usr_bob", name: "Bob", color: "#8FBC8F", avatar_id: 8, active: true, created_at: now - 86400 * 60 },
+  { id: "usr_cara", name: "Cara", color: "#7FA7C9", avatar_id: 15, active: true, created_at: now - 86400 * 30 },
   {
     id: "usr_dora",
     name: "Dora",
     color: "#C9A0DC",
+    avatar_id: 0,
     active: false,
     created_at: now - 86400 * 200,
     archived_at: now - 86400 * 10,
@@ -455,12 +456,28 @@ function stopAp() {
   notify("ap stopped");
 }
 
+// Mirrors the firmware: prefer presets no active user has, so a small fund does
+// not end up with two identical motifs, and fall back to any preset when all 30
+// are taken.
+function randomUserAvatar() {
+  const taken = new Set(
+    users.filter((u) => u.active && u.avatar_id >= 1 && u.avatar_id <= 30).map((u) => u.avatar_id),
+  );
+  const free = [];
+  for (let id = 1; id <= 30; id += 1) if (!taken.has(id)) free.push(id);
+  if (free.length === 0) return 1 + Math.floor(Math.random() * 30);
+  return free[Math.floor(Math.random() * free.length)];
+}
+
 function addUser(body) {
   const id = `usr_${Math.random().toString(16).slice(2, 8)}`;
   const user = {
     id,
     name: String(body.name ?? "Neu").slice(0, 40),
     color: body.color ?? "#D4A373",
+    avatar_id: Number.isInteger(body.avatar_id) && body.avatar_id >= 0 && body.avatar_id <= 30
+      ? body.avatar_id
+      : randomUserAvatar(),
     active: true,
     created_at: now,
   };
@@ -476,6 +493,9 @@ function patchUser(id, body) {
   if (!user) return null;
   if (typeof body.name === "string" && body.name.trim()) user.name = body.name.trim().slice(0, 40);
   if (typeof body.color === "string") user.color = body.color;
+  if (Number.isInteger(body.avatar_id) && body.avatar_id >= 0 && body.avatar_id <= 30) {
+    user.avatar_id = body.avatar_id;
+  }
   if (typeof body.active === "boolean") {
     user.active = body.active;
     if (body.active) delete user.archived_at;
