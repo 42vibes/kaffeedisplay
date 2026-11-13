@@ -14,11 +14,15 @@ Then open two **different** local views:
 | http://localhost:6080/vnc.html?autoconnect=1 | Actual 480 × 480 LVGL SDL **device simulator** in a browser via noVNC |
 | http://localhost:5173 | React **admin web UI** with a separate mock server; admin demo password: `kaffee` |
 
-**Coffee standby demo:** Leave the device simulator untouched for approximately
-60 seconds (default administrative dim timeout). The screen switches to a
-`Kaffeepause` illustration with rising steam. After 600 seconds of total
-inactivity, the steam updates stop (the real ESP32 also switches off the
-backlight). Clicking the screen wakes the kiosk without booking a drink.
+**Coffee standby demo:** Docker starts the LVGL simulator with
+`--standby-demo`. Leave the display untouched for **3 seconds** to see the
+fine-line `Kaffeepause` cup. Its three steam strands rise and **alternate
+between visible and invisible** as their opacities change in staggered cycles.
+Click to dismiss the scene without booking a drink. In this **simulator-only
+demonstration**, the screen-off timeout is disabled so an old Docker session
+cannot display a frozen, still-lit frame. The production ESP32 still uses
+the admin-configured defaults (dim after 60 seconds, backlight off after
+600 seconds) and pauses animations when the screen is off.
 
 To view a static frame immediately, see
 [the real simulator snapshot](ui/screenshots/06-coffee-standby.png).
