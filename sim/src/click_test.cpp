@@ -214,14 +214,16 @@ bool run_click_test(FakeBackend& backend, kaffee::ui::UiApp& app, kaffee::ui::Ui
     const int still_steam = control.standby_steam_y();
     advance(h, 24);
     ok = expect(control.standby_steam_y() == still_steam,
-                "steam animation pauses while the backlight is off") && ok;
+                "steam animation pauses while the backlight is off") &&
+         ok;
 
     const int purchases_before_wake = backend.count_events(kaffee::EventType::Purchase);
     click(h, kCenterX, kCenterY);
     advance(h, 8);
     ok = expect(!control.standby_active(), "first touch dismisses standby") && ok;
     ok = expect(backend.count_events(kaffee::EventType::Purchase) == purchases_before_wake,
-                "first wake touch never purchases a drink") && ok;
+                "first wake touch never purchases a drink") &&
+         ok;
 
     if (ok) {
         std::printf("click-test: PASS (purchases %d, guest sales %d, voids %d)\n",

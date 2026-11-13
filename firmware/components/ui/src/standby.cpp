@@ -48,9 +48,8 @@ void UiAppImpl::build_standby() {
     lv_obj_set_clickable(scene, false);
     lv_obj_set_scrollable(scene, false);
 
-    lv_obj_t* title =
-        theme::make_label(scene, strings::STANDBY_TITLE, theme::font_title_bold(),
-                          theme::color(theme::COLOR_ACCENT));
+    lv_obj_t* title = theme::make_label(scene, strings::STANDBY_TITLE, theme::font_title_bold(),
+                                        theme::color(theme::COLOR_ACCENT));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
 
     // Handle behind the cup, painted with an outline and a hollow centre.
@@ -81,9 +80,8 @@ void UiAppImpl::build_standby() {
         lv_obj_set_clickable(steam_[i], false);
     }
 
-    lv_obj_t* hint =
-        theme::make_label(scene, strings::STANDBY_TOUCH_HINT, theme::font_small(),
-                          theme::color(theme::COLOR_MUTED));
+    lv_obj_t* hint = theme::make_label(scene, strings::STANDBY_TOUCH_HINT, theme::font_small(),
+                                       theme::color(theme::COLOR_MUTED));
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -8);
 
     standby_timer_ = lv_timer_create(&UiAppImpl::standby_anim_cb, kSteamFrameMs, this);
@@ -144,7 +142,7 @@ void UiAppImpl::animate_standby() {
     for (uint32_t i = 0; i < 3; ++i) {
         const uint32_t phase = (tick + i * 12U) % kSteamCycle;
         const int drift = phase < 18U ? static_cast<int>(phase / 6U)
-                                     : static_cast<int>((kSteamCycle - phase) / 6U);
+                                      : static_cast<int>((kSteamCycle - phase) / 6U);
         const int x = 111 + static_cast<int>(i) * 35 + drift;
         const int y = 139 - static_cast<int>(phase) * 2;
         const uint32_t fade_in = phase < 6U ? phase * 22U : 132U;
