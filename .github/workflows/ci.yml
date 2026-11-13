@@ -98,6 +98,31 @@ jobs:
       - name: Deterministic screenshots
         run: make screenshots-check
 
+  preview-container:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build browser-accessible LVGL Docker preview
+        run: docker build -f tools/preview/Dockerfile -t kaffeekasse-preview .
+      - name: Verify nonblack X11 frame and noVNC response
+        run: |
+          docker run -d --name kaffeekasse-preview -p 127.0.0.1:6080:6080 kaffeekasse-preview
+          trap 'docker logs kaffeekasse-preview || true; docker rm -f kaffeekasse-preview || true' EXIT
+          for i in $(seq 1 30); do
+            if docker exec kaffeekasse-preview python3 tools/preview/check-display.py; then
+              curl --fail --silent --show-error http://127.0.0.1:6080/vnc.html > /dev/null
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' kaffeekasse-preview)" != "true" ]; then
+              echo "LVGL preview container exited unexpectedly" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "LVGL interactive preview stayed blank" >&2
+          exit 1
+
+
   firmware:
     runs-on: ubuntu-24.04
     needs: web
