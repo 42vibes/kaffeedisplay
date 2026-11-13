@@ -92,8 +92,10 @@ and state control surface.
 
 The coffee standby feature uses the same administration-controlled idle
 brightness and timeout settings as the ESP32. In the interactive simulator,
-wait approximately 60 seconds without moving or clicking the pointer; three
-steam strokes will rise continuously. Click once to dismiss the overlay.
+wait approximately 60 seconds without clicking the pointer; three
+steam strokes will rise and fade in/out at different times. Click once to
+dismiss the overlay. Use `--standby-demo` for a **3 second** delay and no
+simulated screen-off timeout, as in the default Docker preview.
 
 For a deterministic screenshot without the wait:
 
