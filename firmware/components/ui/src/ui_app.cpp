@@ -382,7 +382,7 @@ int UiAppImpl::standby_steam_y() const {
 
 int UiAppImpl::standby_steam_opacity(int index) const {
     if (index < 0 || index >= 3 || steam_[index] == nullptr) return 0;
-    return static_cast<int>(lv_obj_get_style_line_opa(steam_[index], 0));
+    return static_cast<int>(lv_obj_get_style_line_opa(steam_[index], LV_PART_MAIN));
 }
 
 void UiAppImpl::debug_select_user(const std::string& user_id) {
