@@ -25,21 +25,27 @@ static lv_point_precise_t kCupRim[] = {
     {91, 186}, {99, 180}, {118, 177}, {144, 176}, {171, 177}, {192, 180}, {203, 186},
 };
 static lv_point_precise_t kCupBody[] = {
-    {96, 188}, {97, 207}, {101, 226}, {109, 242}, {120, 249}, {139, 253},
+    {96, 188},  {97, 207},  {101, 226}, {109, 242}, {120, 249}, {139, 253},
     {167, 253}, {185, 249}, {195, 242}, {203, 227}, {207, 208}, {208, 188},
 };
 static lv_point_precise_t kCupHighlight[] = {
-    {109, 207}, {113, 226}, {119, 235},
+    {109, 207},
+    {113, 226},
+    {119, 235},
 };
 static lv_point_precise_t kHandleOuter[] = {
     {207, 192}, {220, 188}, {235, 190}, {245, 201}, {248, 213},
     {246, 226}, {239, 236}, {227, 240}, {207, 238},
 };
 static lv_point_precise_t kSaucer[] = {
-    {88, 265}, {101, 269}, {201, 269}, {218, 264},
+    {88, 265},
+    {101, 269},
+    {201, 269},
+    {218, 264},
 };
 static lv_point_precise_t kSaucerHighlight[] = {
-    {121, 275}, {185, 275},
+    {121, 275},
+    {185, 275},
 };
 
 lv_obj_t* stroke(lv_obj_t* parent, lv_point_precise_t* points, uint32_t count, uint32_t color,
@@ -74,9 +80,8 @@ void UiAppImpl::build_standby() {
     lv_obj_set_clickable(scene, false);
     lv_obj_set_scrollable(scene, false);
 
-    lv_obj_t* title =
-        theme::make_label(scene, strings::STANDBY_TITLE, theme::font_body(),
-                          theme::color(theme::COLOR_ACCENT));
+    lv_obj_t* title = theme::make_label(scene, strings::STANDBY_TITLE, theme::font_body(),
+                                        theme::color(theme::COLOR_ACCENT));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 24);
 
     // Restrained line-art porcelain: no chunky solid rectangle for the cup.
@@ -92,9 +97,8 @@ void UiAppImpl::build_standby() {
         steam_[i] = stroke(scene, kSteamPath, 8, 0xE9DFD1, 3, LV_OPA_TRANSP);
     }
 
-    lv_obj_t* hint =
-        theme::make_label(scene, strings::STANDBY_TOUCH_HINT, theme::font_small(),
-                          theme::color(theme::COLOR_MUTED));
+    lv_obj_t* hint = theme::make_label(scene, strings::STANDBY_TOUCH_HINT, theme::font_small(),
+                                       theme::color(theme::COLOR_MUTED));
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -12);
 
     standby_timer_ = lv_timer_create(&UiAppImpl::standby_anim_cb, kSteamFrameMs, this);
@@ -158,19 +162,17 @@ void UiAppImpl::animate_standby() {
         } else if (phase < 30U) {
             opacity = static_cast<lv_opa_t>(kSteamPeakOpacity);
         } else if (phase < kSteamVisibleFrames) {
-            opacity = static_cast<lv_opa_t>(
-                (kSteamVisibleFrames - phase) * kSteamPeakOpacity /
-                (kSteamVisibleFrames - 30U));
+            opacity = static_cast<lv_opa_t>((kSteamVisibleFrames - phase) * kSteamPeakOpacity /
+                                            (kSteamVisibleFrames - 30U));
         }
 
         // Each strand rises ~56px and drifts side-to-side by only 3px.
         // Gradual opacity makes the start/end blend into the dark background.
-        const int rise = static_cast<int>(
-            (phase < kSteamVisibleFrames ? phase : kSteamVisibleFrames) * 56U /
-            kSteamVisibleFrames);
+        const int rise =
+            static_cast<int>((phase < kSteamVisibleFrames ? phase : kSteamVisibleFrames) * 56U /
+                             kSteamVisibleFrames);
         const int wobble_phase = static_cast<int>(phase % 32U);
-        const int wobble = wobble_phase < 16 ? wobble_phase / 5 - 2
-                                             : (32 - wobble_phase) / 5 - 2;
+        const int wobble = wobble_phase < 16 ? wobble_phase / 5 - 2 : (32 - wobble_phase) / 5 - 2;
         lv_obj_set_pos(steam_[i], 108 + static_cast<int>(i) * 36 + wobble, 107 - rise);
         lv_obj_set_style_line_opa(steam_[i], opacity, 0);
     }
