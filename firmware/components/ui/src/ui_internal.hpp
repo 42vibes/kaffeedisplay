@@ -43,6 +43,7 @@ class UiAppImpl final : public UiApp, public UiControl {
     bool guest_selected() const override;
     bool standby_active() const override;
     int standby_steam_y() const override;
+    int standby_steam_opacity(int index) const override;
     void debug_select_user(const std::string& user_id) override;
     void debug_book(const std::string& product_id) override;
     void debug_deselect() override;
