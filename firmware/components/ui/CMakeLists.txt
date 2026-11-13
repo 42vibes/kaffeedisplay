@@ -1,5 +1,6 @@
 set(UI_SOURCES
     "src/ui_app.cpp"
+    "src/standby.cpp"
     "src/page_book.cpp"
     "src/page_stats.cpp"
     "src/page_system.cpp"

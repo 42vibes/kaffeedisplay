@@ -118,6 +118,7 @@ screenshots: sim-build
 	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/06-page1-15-users.png --page 1 --users 15
 	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/07-page1-30-users-scrolled.png --page 1 --users 30 --scroll 500
 	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/08-page1-30-users-usage-order.png --page 1 --users 30 --order usage
+	./sim/build/kaffeekasse-sim --screenshot $(SCREENSHOT_DIR)/06-coffee-standby.png --page 1 --state standby
 
 screenshots-check: sim-build
 	rm -rf $(SCREENSHOT_CHECK_DIR)
