@@ -206,6 +206,29 @@ bool run_click_test(FakeBackend& backend, kaffee::ui::UiApp& app, kaffee::ui::Ui
     advance(h, 12);
     ok = expect(control.standby_steam_y() != steam_before, "steam actually moves") && ok;
 
+    // Sample a complete 9.6s animation cycle: all three strokes must become
+    // invisible, become clearly visible, and take turns at different phases.
+    // This catches static steam or a timer that only changes line positions.
+    int min_opa[3] = {255, 255, 255};
+    int max_opa[3] = {0, 0, 0};
+    bool staggered = false;
+    for (int frame = 0; frame < 640; ++frame) {
+        advance(h, 1);
+        int opas[3] = {};
+        for (int i = 0; i < 3; ++i) {
+            opas[i] = control.standby_steam_opacity(i);
+            if (opas[i] < min_opa[i]) min_opa[i] = opas[i];
+            if (opas[i] > max_opa[i]) max_opa[i] = opas[i];
+        }
+        if (opas[0] != opas[1] && opas[1] != opas[2]) staggered = true;
+    }
+    for (int i = 0; i < 3; ++i) {
+        ok = expect(min_opa[i] == 0 && max_opa[i] >= 180,
+                    "each steam strand alternately fades out and becomes visible") &&
+             ok;
+    }
+    ok = expect(staggered, "three steam strands fade at staggered times") && ok;
+
     // After screen-off timeout, the scene remains to consume the first wake
     // tap, but the animation must be paused to save redraw power.
     h.tick += 600'000;
