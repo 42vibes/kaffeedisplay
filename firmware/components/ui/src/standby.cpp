@@ -1,5 +1,6 @@
 #include "ui_internal.hpp"
 
+#include "standby_cup_generated.hpp"
 #include "strings.hpp"
 #include "theme.hpp"
 
@@ -16,9 +17,8 @@ constexpr uint32_t kSteamStaggerFrames = kSteamCycleFrames / 3;
 constexpr uint32_t kSteamVisibleFrames = 68;
 constexpr int kSteamPeakOpacity = 194;
 
-// Smooth line art: cubic curves are sampled offline into static LVGL points.
-// No geometry allocation or bezier evaluation occurs in the animation timer.
-// The paths stay in flash and keep their lifetime for lv_line_set_points().
+// Static geometry for the three animated steam wisps. The cup itself is
+// rendered from one colour-indexed SVG-derived image in flash.
 static lv_point_precise_t kSteamPath[] = {
     {14, 82}, {16, 80}, {16, 77}, {17, 75}, {17, 73}, {17, 71}, {17, 68}, {16, 66},
     {15, 64}, {14, 62}, {13, 59}, {11, 57}, {10, 55}, {10, 52}, {9, 50},  {9, 48},
@@ -27,74 +27,6 @@ static lv_point_precise_t kSteamPath[] = {
     {16, 9},  {16, 7},  {16, 5},  {15, 2},  {14, 0},
 };
 constexpr uint32_t kSteamPathCount = 37;
-
-static lv_point_precise_t kCupRim[] = {
-    {211, 183}, {211, 184}, {209, 185}, {207, 186}, {204, 187}, {200, 188}, {196, 189}, {190, 190},
-    {185, 190}, {178, 191}, {172, 191}, {165, 192}, {157, 192}, {150, 192}, {143, 192}, {135, 192},
-    {128, 191}, {122, 191}, {115, 190}, {110, 190}, {104, 189}, {100, 188}, {96, 187},  {93, 186},
-    {91, 185},  {89, 184},  {89, 183},  {89, 182},  {91, 181},  {93, 180},  {96, 179},  {100, 178},
-    {104, 177}, {110, 176}, {115, 176}, {122, 175}, {128, 175}, {135, 174}, {143, 174}, {150, 174},
-    {157, 174}, {165, 174}, {172, 175}, {178, 175}, {185, 176}, {190, 176}, {196, 177}, {200, 178},
-    {204, 179}, {207, 180}, {209, 181}, {211, 182}, {211, 183},
-};
-constexpr uint32_t kCupRimCount = 53;
-
-static lv_point_precise_t kCupBody[] = {
-    {90, 186},  {90, 190},  {90, 193},  {90, 197},  {90, 201},  {91, 206},  {91, 210},  {92, 214},
-    {93, 218},  {94, 222},  {95, 226},  {97, 229},  {98, 233},  {100, 236}, {102, 239}, {103, 241},
-    {105, 244}, {107, 246}, {110, 248}, {112, 250}, {115, 252}, {118, 253}, {121, 255}, {124, 256},
-    {127, 257}, {131, 258}, {135, 259}, {139, 259}, {143, 260}, {148, 260}, {153, 260}, {158, 260},
-    {163, 259}, {167, 258}, {171, 257}, {175, 256}, {179, 255}, {182, 253}, {185, 251}, {188, 249},
-    {191, 247}, {193, 245}, {195, 243}, {197, 240}, {199, 238}, {201, 235}, {203, 231}, {204, 227},
-    {205, 223}, {206, 219}, {207, 215}, {208, 211}, {209, 207}, {209, 203}, {210, 199}, {210, 195},
-    {210, 192}, {210, 188}, {210, 185},
-};
-constexpr uint32_t kCupBodyCount = 59;
-
-static lv_point_precise_t kCupHighlight[] = {
-    {106, 203}, {106, 206}, {106, 209}, {106, 211}, {106, 214}, {107, 217}, {107, 219}, {108, 221},
-    {109, 223}, {109, 226}, {110, 228}, {111, 230}, {113, 231}, {114, 233}, {115, 235},
-};
-constexpr uint32_t kCupHighlightCount = 15;
-
-static lv_point_precise_t kHandleOuter[] = {
-    {207, 194}, {210, 192}, {213, 191}, {217, 190}, {221, 189}, {224, 188}, {228, 188}, {232, 189},
-    {236, 189}, {239, 190}, {243, 191}, {247, 192}, {250, 194}, {253, 196}, {256, 198}, {258, 201},
-    {260, 204}, {262, 207}, {263, 210}, {264, 213}, {265, 216}, {265, 219}, {264, 223}, {264, 226},
-    {263, 229}, {262, 232}, {260, 235}, {258, 237}, {256, 240}, {254, 242}, {251, 244}, {249, 246},
-    {246, 248}, {242, 249}, {239, 249}, {235, 250}, {231, 250}, {227, 249}, {223, 249}, {219, 247},
-    {215, 246}, {210, 244}, {206, 242},
-};
-constexpr uint32_t kHandleOuterCount = 43;
-
-static lv_point_precise_t kHandleInner[] = {
-    {210, 204}, {214, 203}, {218, 202}, {222, 201}, {225, 201}, {229, 202}, {233, 202},
-    {236, 203}, {239, 205}, {242, 206}, {244, 208}, {246, 210}, {247, 212}, {248, 216},
-    {249, 219}, {249, 222}, {249, 225}, {248, 228}, {247, 230}, {245, 233}, {243, 234},
-    {241, 236}, {238, 237}, {235, 238}, {232, 239}, {230, 239}, {227, 239}, {225, 239},
-    {223, 239}, {221, 239}, {219, 238}, {217, 237}, {215, 236}, {213, 235}, {211, 233},
-};
-constexpr uint32_t kHandleInnerCount = 35;
-
-static lv_point_precise_t kSaucerTop[] = {
-    {83, 272},  {88, 271},  {93, 271},  {98, 270},  {104, 269}, {110, 269}, {116, 268}, {122, 268},
-    {129, 268}, {135, 268}, {142, 268}, {149, 268}, {156, 268}, {162, 268}, {169, 268}, {176, 268},
-    {182, 268}, {189, 269}, {195, 269}, {201, 270}, {207, 271}, {212, 271}, {217, 272},
-};
-constexpr uint32_t kSaucerTopCount = 23;
-
-static lv_point_precise_t kSaucerFront[] = {
-    {83, 272},  {87, 274},  {91, 275},  {97, 276},  {102, 277}, {108, 278}, {115, 279}, {121, 280},
-    {128, 280}, {136, 281}, {143, 281}, {150, 281}, {158, 281}, {165, 281}, {172, 280}, {179, 280},
-    {186, 279}, {192, 278}, {198, 277}, {204, 276}, {209, 275}, {213, 274}, {217, 272},
-};
-constexpr uint32_t kSaucerFrontCount = 23;
-
-static lv_point_precise_t kSaucerFoot[] = {
-    {116, 290}, {120, 291}, {125, 291}, {130, 292}, {135, 292}, {140, 292}, {145, 292}, {150, 292},
-    {155, 292}, {160, 292}, {165, 292}, {170, 292}, {175, 291}, {179, 291}, {184, 290},
-};
-constexpr uint32_t kSaucerFootCount = 15;
 
 lv_obj_t* stroke(lv_obj_t* parent, lv_point_precise_t* points, uint32_t count, uint32_t color,
                  int thickness, lv_opa_t opacity = LV_OPA_COVER) {
@@ -132,16 +64,13 @@ void UiAppImpl::build_standby() {
                                         theme::color(theme::COLOR_ACCENT));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 24);
 
-    // The refined demitasse is symmetrical, tapered and gently rounded.
-    // Draw the handle first so the porcelain silhouette conceals its joins.
-    stroke(scene, kHandleOuter, kHandleOuterCount, 0xCBAB89, 3);
-    stroke(scene, kHandleInner, kHandleInnerCount, 0x876E55, 2, LV_OPA_80);
-    stroke(scene, kCupBody, kCupBodyCount, 0xDDC7AB, 3);
-    stroke(scene, kCupRim, kCupRimCount, 0xEADBC6, 2);
-    stroke(scene, kCupHighlight, kCupHighlightCount, 0x866C57, 2, LV_OPA_60);
-    stroke(scene, kSaucerTop, kSaucerTopCount, 0xC2A17C, 2);
-    stroke(scene, kSaucerFront, kSaucerFrontCount, 0xAE8B6C, 2);
-    stroke(scene, kSaucerFoot, kSaucerFootCount, 0x6D5847, 2, LV_OPA_70);
+    // Draw the edited SVG as one compact LVGL I8 image. Only its 8-bit palette
+    // and pixel indices live in flash (~43 KiB); no SVG renderer at runtime.
+    lv_obj_t* cup = lv_image_create(scene);
+    lv_image_set_src(cup, &standby_cup_image);
+    lv_obj_set_pos(cup, 45, 132);
+    lv_obj_set_clickable(cup, false);
+    lv_obj_set_scrollable(cup, false);
 
     for (int i = 0; i < 3; ++i) {
         steam_[i] = stroke(scene, kSteamPath, kSteamPathCount, 0xE9DFD1, 2, LV_OPA_TRANSP);
