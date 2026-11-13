@@ -15,8 +15,10 @@ PR must remain unchanged.
 - Keep the existing persisted `DisplaySettings` unchanged and let the board
   control physical backlight power. The UI observes LVGL input inactivity and
   shows an overlay only after the configured dim or off threshold.
-- Draw a compact stylised coffee cup and rising steam with LVGL shapes/lines.
-  Animate three existing line objects using one `90 ms` LVGL timer; no image
+- Draw a filigree, outlined porcelain cup and rising steam with native LVGL
+  lines (instead of thick filled rectangles). Animate three line objects from
+  one `80 ms` LVGL timer; the three cycles are staggered by 3.2 seconds,
+  each rising roughly 56 pixels and fading in/out independently. No image
   frames, filesystem assets, network connection or allocations per frame.
 - Pause the animation after the configured screen-off threshold, without
   removing the full-screen overlay. The next touch is intercepted and wakes
