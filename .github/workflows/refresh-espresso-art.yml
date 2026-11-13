@@ -1,0 +1,51 @@
+name: Regenerate espresso cup SVG render and screenshot (temporary)
+on:
+  push:
+    branches: [feature/animated-coffee-standby]
+permissions:
+  contents: write
+concurrency:
+  group: espresso-cup-art
+  cancel-in-progress: true
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Install SVG rasterizer, Pillow, SDL and clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-cairosvg python3-pil libsdl2-dev zlib1g-dev clang-format
+      - name: Generate fixed indexed 8-bit LVGL cup resource
+        run: |
+          /usr/bin/python3 tools/generate_standby_cup.py
+          /usr/bin/python3 tools/generate_standby_cup.py --check
+      - name: Format updated LVGL application
+        run: clang-format -i firmware/components/ui/src/standby.cpp
+      - name: Regenerate actual device screenshots
+        run: make screenshots
+      - name: Check three steam wisps, wake behavior and screenshots
+        run: |
+          make test-ui
+          make screenshots-check
+      - name: Validate real standby render has rich palette and isn't just background
+        run: |
+          /usr/bin/python3 - <<'PY'
+          from PIL import Image
+          image = Image.open("docs/ui/screenshots/06-coffee-standby.png").convert("RGB")
+          colors = image.crop((75, 225, 385, 400)).getcolors(maxcolors=1000000)
+          assert colors is not None and len(colors) >= 80, f"expected shaded cup, got {len(colors) if colors else 0} colours"
+          print(f"PASS: true LVGL screenshot has {len(colors)} distinct colours")
+          PY
+      - name: Check in generated source resources and snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firmware/components/ui/src/standby_cup_generated.hpp             firmware/components/ui/src/standby.cpp             docs/ui/screenshots/06-coffee-standby.png
+          if ! git diff --cached --quiet; then
+            git commit -m "assets: add compact LVGL espresso illustration and screenshot"
+            git push origin HEAD:feature/animated-coffee-standby
+          fi
