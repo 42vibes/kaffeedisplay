@@ -15,14 +15,14 @@ PR must remain unchanged.
 - Keep the existing persisted `DisplaySettings` unchanged and let the board
   control physical backlight power. The UI observes LVGL input inactivity and
   shows an overlay only after the configured dim or off threshold.
-- Draw a filigree, outlined porcelain cup and rising steam with native LVGL
-  lines. Curves are pre-sampled from cubic Bézier geometry into immutable
-  point arrays at source-generation time; no per-frame Bézier computation,
-  heavy vector rendering or thick polygonal outlines. Animate three line
-  objects from
-  one `80 ms` LVGL timer; the three cycles are staggered by 3.2 seconds,
-  each rising roughly 56 pixels and fading in/out independently. No image
-  frames, filesystem assets, network connection or allocations per frame.
+- Author one professionally shaded porcelain espresso cup in editable SVG.
+  Convert it **only at generation time** (CairoSVG + Pillow) into a fixed
+  242 × 175 LVGL I8 image with a 256-color BGRA palette and pixel indices
+  (43,374 bytes of image data). A static LVGL image uses the built-in indexed
+  renderer; the ESP32 does not parse SVGs, use network images or decode PNGs.
+- Keep the three rising steam wisps as native LVGL lines. A single `80 ms`
+  timer fades them independently with 3.2-second phase offsets and ~56 pixels
+  rise. Animation needs no frame buffers or runtime geometry allocations.
 - Pause the animation after the configured screen-off threshold, without
   removing the full-screen overlay. The next touch is intercepted and wakes
   the screen instead of triggering a blind booking. The overlay disappears
@@ -46,5 +46,7 @@ PR must remain unchanged.
 ## Alternatives
 
 A GIF or frame-by-frame RGB565 animation would consume significantly more
-flash/PSRAM and require decoding or large embedded resources. Native LVGL
-primitives are simpler and have a smaller OTA footprint.
+flash and require decoding or large embedded resources. Pure LVGL polygon
+contours were smaller, but looked visibly hand-drawn on the 480px screen;
+the 43 KB indexed static cup balances image quality and OTA budget.
+Only the steam remains animated as native LVGL primitives.
