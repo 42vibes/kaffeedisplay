@@ -16,7 +16,10 @@ PR must remain unchanged.
   control physical backlight power. The UI observes LVGL input inactivity and
   shows an overlay only after the configured dim or off threshold.
 - Draw a filigree, outlined porcelain cup and rising steam with native LVGL
-  lines (instead of thick filled rectangles). Animate three line objects from
+  lines. Curves are pre-sampled from cubic Bézier geometry into immutable
+  point arrays at source-generation time; no per-frame Bézier computation,
+  heavy vector rendering or thick polygonal outlines. Animate three line
+  objects from
   one `80 ms` LVGL timer; the three cycles are staggered by 3.2 seconds,
   each rising roughly 56 pixels and fading in/out independently. No image
   frames, filesystem assets, network connection or allocations per frame.
