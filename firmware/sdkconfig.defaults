@@ -50,6 +50,8 @@ CONFIG_LITTLEFS_OBJ_NAME_LEN=64
 
 # LVGL defaults (components may override)
 CONFIG_LV_COLOR_DEPTH_16=y
+# Enable drawing of the I8 indexed cup image through its ARGB8888 palette.
+CONFIG_LV_DRAW_SW_SUPPORT_ARGB8888=y
 CONFIG_LV_USE_QRCODE=y
 
 # Logs
