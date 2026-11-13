@@ -28,7 +28,11 @@ def generate() -> str:
         colors=240, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.FLOYDSTEINBERG
     )
     colors = indexed.getpalette()
-    assert colors is not None and len(colors) >= PALETTE_ENTRIES * 3
+    assert colors is not None and len(colors) % 3 == 0
+    # Pillow emits exactly 240 entries when asked for 240 colours, while
+    # LVGL I8 requires a full 256-entry palette before its pixel data.
+    colors.extend([16, 13, 12] * (PALETTE_ENTRIES - len(colors) // 3))
+    assert len(colors) == PALETTE_ENTRIES * 3
     payload = bytearray()
     # LVGL stores its full 256-entry ARGB8888 lookup table BEFORE the I8 pixels.
     # On the ESP32 (little endian) each palette color is stored as B, G, R, A.
