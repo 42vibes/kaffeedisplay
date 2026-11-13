@@ -43,8 +43,9 @@ The device UI is 480×480, German, espresso-themed.
 ### Animated low-power coffee standby
 
 After the existing admin-configured **dim timeout** (default 60 seconds),
-the 480×480 kiosk shows a coffee cup with gently rising steam at the
-configured idle brightness. The cup and animation are native LVGL objects;
+the 480×480 kiosk shows a fine-line coffee cup with **three staggered rising
+steam strokes that alternately fade in and out** at the configured idle
+brightness. The cup and animation are native LVGL objects;
 there are no GIF frames, external images, runtime downloads, or extra codecs.
 At the configured **screen-off timeout** (default 600 seconds), the steam
 animation pauses. The dark wake overlay remains to consume the first touch
@@ -56,7 +57,8 @@ timeouts to zero disables the standby overlay.
 
 **Docker preview:** `docker compose -f compose.preview.yml up --build` —
 open `http://localhost:6080/vnc.html?autoconnect=1`, leave the
-simulator untouched for about 60 seconds to watch the steam move.
+simulator untouched for **3 seconds** to watch the alternating fade and rise.
+This faster demo configuration applies only to the Docker simulator.
 See [Docker preview instructions](docs/container-preview.md).
 
 For reproducible simulator evidence:
