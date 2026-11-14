@@ -167,7 +167,7 @@ docs:
 	$(PYTHON) tools/check_docs.py
 
 check: fmt-check lint docs test web assets standby-cup-check
-	@if command -v idf.py >/dev/null; then cd firmware && idf.py build; else echo "Skipping firmware build (idf.py not found; CI builds it in Docker)"; fi
+	@if command -v idf.py >/dev/null; then cd firmware && STANDBY_PYTHON="$(STANDBY_PYTHON)" idf.py build; else echo "Skipping firmware build (idf.py not found; CI builds it in Docker)"; fi
 	@$(PYTHON) tools/check_sizes.py
 
 clean:
