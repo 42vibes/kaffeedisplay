@@ -4,7 +4,7 @@ Status: in-progress
 Track: embedded UI
 Owner: 42vibes
 Branch: `codex/animated-coffee-standby-upstream-3d764f8`
-PR: Draft #36 — https://github.com/Babo96/kaffeedisplay/pull/36
+PR: Draft for upstream (pending creation)
 
 ## Scope
 
@@ -21,9 +21,9 @@ PR: Draft #36 — https://github.com/Babo96/kaffeedisplay/pull/36
 - Existing simulator booking, scrolling and AP tests still pass.
 - A deterministic screenshot demonstrates the standby view.
 - Host, web, simulator, firmware and size checks succeed on the final branch.
-- Physical-device idle dim / wake / power use must be reviewed before upstream submission.
+- Physical-device idle dim / wake / power use must be reviewed before merge.
 
 ## Evidence
 
 - [Standby screenshot](../ui/screenshots/06-coffee-standby.png) generated from the real LVGL simulator.
-- [Draft PR #36 and current CI](https://github.com/Babo96/kaffeedisplay/pull/36/checks).
+- [CI for this draft](https://github.com/42vibes/kaffeedisplay/pull/3/checks).
