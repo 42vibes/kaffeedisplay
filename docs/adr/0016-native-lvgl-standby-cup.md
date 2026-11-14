@@ -16,10 +16,14 @@ PR must remain unchanged.
   control physical backlight power. The UI observes LVGL input inactivity and
   shows an overlay only after the configured dim or off threshold.
 - Author one professionally shaded porcelain espresso cup in editable SVG.
-  Convert it **only at generation time** (CairoSVG + Pillow) into a fixed
-  242 × 175 LVGL I8 image with a 256-color BGRA palette and pixel indices
-  (43,374 bytes of image data). A static LVGL image uses the built-in indexed
-  renderer; the ESP32 does not parse SVGs, use network images or decode PNGs.
+  Convert it **only during the build** (pinned CairoSVG + Pillow tooling) into
+  a fixed 242 × 175 LVGL I8 image with a 256-color BGRA palette and pixel
+  indices (43,374 bytes of image data). A static LVGL image uses the built-in
+  indexed renderer; the ESP32 does not parse SVGs, use network images or decode
+  PNGs.
+- Generate the C++ image header under the ignored build directory. Do not commit
+  generated firmware image data; the compiled 43,374-byte resource is counted
+  against the 3 MiB OTA application partition by the firmware size check.
 - Keep the three rising steam wisps as native LVGL lines. A single `80 ms`
   timer fades them independently with 3.2-second phase offsets and ~56 pixels
   rise. Animation needs no frame buffers or runtime geometry allocations.
@@ -41,7 +45,9 @@ PR must remain unchanged.
   deep sleep: CPU and display hardware remain controlled by existing firmware.
 - Board and LVGL input activity share the same physical touch source; a real
   ESP32 hardware soak test is required for timing/energy validation.
-- No new dependency, file format or settings migration is required.
+- No new runtime dependency, file format or settings migration is required.
+  Build tooling is pinned in `tools/requirements-standby.txt`; the native
+  Cairo library is needed only while building the asset.
 
 ## Alternatives
 

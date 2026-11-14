@@ -12,7 +12,7 @@ import io
 
 ROOT = Path(__file__).resolve().parents[1]
 SVG = ROOT / "assets/standby/espresso.svg"
-HEADER = ROOT / "firmware/components/ui/src/standby_cup_generated.hpp"
+HEADER = ROOT / "build/standby/standby_cup_generated.hpp"
 WIDTH = 242
 HEIGHT = 175
 PALETTE_ENTRIES = 256
@@ -69,16 +69,20 @@ def generate() -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--check", action="store_true", help="Verify committed data is in sync")
+    parser.add_argument("--check", action="store_true", help="Verify generated data is in sync")
+    parser.add_argument(
+        "--output", type=Path, default=HEADER, help="Generated header path"
+    )
     args = parser.parse_args()
     output = generate()
     if args.check:
-        if not HEADER.exists() or HEADER.read_text() != output:
-            parser.error("Standby image is outdated: run tools/generate_standby_cup.py")
-        print("PASS: committed LVGL I8 palette image matches editable SVG")
+        if not args.output.exists() or args.output.read_text() != output:
+            parser.error(f"Standby image is outdated: regenerate {args.output}")
+        print("PASS: LVGL I8 palette image matches editable SVG")
     else:
-        HEADER.write_text(output)
-        print(f"Generated {HEADER} ({PALETTE_ENTRIES * 4 + WIDTH * HEIGHT} image bytes)")
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(output)
+        print(f"Generated {args.output} ({PALETTE_ENTRIES * 4 + WIDTH * HEIGHT} image bytes)")
 
 
 if __name__ == "__main__":

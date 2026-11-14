@@ -65,9 +65,9 @@ This faster demo configuration applies only to the Docker simulator.
 See [Docker preview instructions](docs/container-preview.md).
 
 To change the actual cup, edit `assets/standby/espresso.svg`, then run
-`python3 tools/generate_standby_cup.py` (generation-time dependencies:
-CairoSVG and Pillow) and regenerate the LVGL screenshot. CI verifies
-the generated image matches the SVG source.
+`make sim-build` and regenerate the LVGL screenshot. The pinned, build-only
+CairoSVG and Pillow tools generate the C++ image header in the ignored build
+directory. CI checks that the generated image matches the SVG source.
 
 For reproducible simulator evidence:
 `./sim/build/kaffeekasse-sim --screenshot /tmp/coffee.png --state standby`.
