@@ -4,7 +4,7 @@ Status: in-progress
 Track: embedded UI
 Owner: 42vibes
 Branch: `codex/animated-coffee-standby-upstream-3d764f8`
-PR: Draft for upstream (pending creation)
+PR: Draft #36 — https://github.com/Babo96/kaffeedisplay/pull/36
 
 ## Scope
 
@@ -26,4 +26,4 @@ PR: Draft for upstream (pending creation)
 ## Evidence
 
 - [Standby screenshot](../ui/screenshots/06-coffee-standby.png) generated from the real LVGL simulator.
-- [CI for this draft](https://github.com/42vibes/kaffeedisplay/pull/3/checks).
+- [Draft PR #36 and current CI](https://github.com/Babo96/kaffeedisplay/pull/36/checks).
