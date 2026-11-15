@@ -1,6 +1,6 @@
 #include "ui_internal.hpp"
 
-#include "standby_cup_generated.hpp"
+#include "cup_art.hpp"
 #include "strings.hpp"
 #include "theme.hpp"
 
@@ -17,8 +17,8 @@ constexpr uint32_t kSteamStaggerFrames = kSteamCycleFrames / 3;
 constexpr uint32_t kSteamVisibleFrames = 68;
 constexpr int kSteamPeakOpacity = 194;
 
-// Static geometry for the three animated steam wisps. The cup itself is
-// rendered from one colour-indexed SVG-derived image in flash.
+// Static geometry for the three animated steam wisps. The cup shares the
+// same native LVGL primitives as the boot splash.
 static lv_point_precise_t kSteamPath[] = {
     {14, 82}, {16, 80}, {16, 77}, {17, 75}, {17, 73}, {17, 71}, {17, 68}, {16, 66},
     {15, 64}, {14, 62}, {13, 59}, {11, 57}, {10, 55}, {10, 52}, {9, 50},  {9, 48},
@@ -64,13 +64,7 @@ void UiAppImpl::build_standby() {
                                         theme::color(theme::COLOR_ACCENT));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 24);
 
-    // Draw the edited SVG as one compact LVGL I8 image. Only its 8-bit palette
-    // and pixel indices live in flash (~43 KiB); no SVG renderer at runtime.
-    lv_obj_t* cup = lv_image_create(scene);
-    lv_image_set_src(cup, &standby_cup_image);
-    lv_obj_set_pos(cup, 45, 132);
-    lv_obj_set_clickable(cup, false);
-    lv_obj_set_scrollable(cup, false);
+    cup_art::create(scene, 150, 166, 0x100D0C);
 
     for (int i = 0; i < 3; ++i) {
         steam_[i] = stroke(scene, kSteamPath, kSteamPathCount, 0xE9DFD1, 2, LV_OPA_TRANSP);

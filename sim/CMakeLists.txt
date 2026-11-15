@@ -31,7 +31,6 @@ set(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(UI_DIR "${REPO_ROOT}/firmware/components/ui")
 set(DOMAIN_DIR "${REPO_ROOT}/firmware/components/domain")
 
-include("${REPO_ROOT}/cmake/standby-cup.cmake")
 
 add_executable(kaffeekasse-sim
   src/main.cpp
@@ -51,6 +50,7 @@ add_executable(kaffeekasse-sim
   ${UI_DIR}/src/theme.cpp
   ${UI_DIR}/src/format.cpp
   ${UI_DIR}/src/member_order.cpp
+  ${UI_DIR}/src/cup_art.cpp
   ${UI_DIR}/src/splash.cpp
   ${UI_DIR}/src/fonts/kaffee_font_14.c
   ${UI_DIR}/src/fonts/kaffee_font_18.c
@@ -60,7 +60,6 @@ add_executable(kaffeekasse-sim
   ${UI_DIR}/src/fonts/kaffee_font_34_bold.c
 )
 
-kaffee_add_standby_cup_codegen(kaffeekasse-sim "${REPO_ROOT}")
 
 target_include_directories(kaffeekasse-sim PRIVATE
   ${UI_DIR}/include

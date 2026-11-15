@@ -4,12 +4,12 @@ Status: in-progress
 Track: embedded UI
 Owner: 42vibes
 Branch: `codex/animated-coffee-standby-upstream-3d764f8`
-PR: Ready for review #36 — https://github.com/Babo96/kaffeedisplay/pull/36
+PR: Draft #36 — https://github.com/Babo96/kaffeedisplay/pull/36
 
 ## Scope
 
 - Show a tasteful coffee cup with three rising steam strokes on the 480×480 display after the existing administrative dim timeout.
-- Draw the 3D-shaded porcelain cup from editable SVG artwork, precompiled as one compact LVGL I8 indexed bitmap. Animate only the three steam wisps with native LVGL lines. No sprite sheet, GIF or runtime SVG renderer.
+- Reuse the native LVGL cup shapes from the boot splash. Animate three steam wisps with native LVGL lines; no separate standby bitmap or image-generation pipeline.
 - Reuse `DisplaySettings.dim_timeout_s`, `brightness_idle` and `screen_off_timeout_s` unchanged.
 - Stop steam updates after screen-off; preserve a full-screen wake target so an invisible tap never books a product.
 - Keep the existing AP stay-awake behavior and avoid touching user/avatar, accounting and REST contracts.

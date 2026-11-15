@@ -7,6 +7,7 @@ set(UI_SOURCES
     "src/theme.cpp"
     "src/format.cpp"
     "src/member_order.cpp"
+    "src/cup_art.cpp"
     "src/splash.cpp"
     "src/fonts/kaffee_font_14.c"
     "src/fonts/kaffee_font_18.c"
@@ -23,5 +24,3 @@ idf_component_register(
     REQUIRES service lvgl board
 )
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/standby-cup.cmake")
-kaffee_add_standby_cup_codegen(${COMPONENT_LIB} "${CMAKE_CURRENT_LIST_DIR}/../../..")

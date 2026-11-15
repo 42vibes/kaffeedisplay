@@ -47,8 +47,9 @@ states used by the [T-013 layout decision record](../../tasks/T-013-page1-layout
 |---|
 | ![Kaffeepause](06-coffee-standby.png) |
 
-The steam is actually animated in LVGL; this screenshot captures one
-deterministic frame. The simulator click test checks motion and wake safety.
+The cup reuses the boot splash's native LVGL shapes. Steam is animated in
+LVGL; this screenshot captures one deterministic frame. The simulator click
+test checks motion and wake safety.
 
 ## Admin web
 

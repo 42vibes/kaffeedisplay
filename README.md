@@ -45,11 +45,10 @@ The device UI is 480×480, German, espresso-themed.
 After the existing admin-configured **dim timeout** (default 60 seconds),
 the 480×480 kiosk shows a shaded porcelain espresso cup with **three
 staggered rising steam strokes that alternately fade in and out** at the
-configured idle brightness. The cup is authored as editable
-[SVG vector artwork](assets/standby/espresso.svg) and compiled into a
-compact **242 × 175, I8 palette bitmap (~43 KB)** that LVGL draws directly
-from firmware flash. The steam remains native LVGL geometry; there are no
-GIF frames, runtime SVG parsing, network downloads, or extra decoders.
+configured idle brightness. The standby uses the same native LVGL cup shapes
+as the boot splash, so it needs no separate bitmap or image-generation
+toolchain. The steam remains native LVGL geometry; there are no GIF frames,
+runtime SVG parsing, network downloads, or extra decoders.
 At the configured **screen-off timeout** (default 600 seconds), the steam
 animation pauses. The dark wake overlay remains to consume the first touch
 without triggering a purchase. The admin can change both timeouts and the
@@ -64,10 +63,9 @@ simulator untouched for **3 seconds** to watch the alternating fade and rise.
 This faster demo configuration applies only to the Docker simulator.
 See [Docker preview instructions](docs/container-preview.md).
 
-To change the actual cup, edit `assets/standby/espresso.svg`, then run
-`make sim-build` and regenerate the LVGL screenshot. The pinned, build-only
-CairoSVG and Pillow tools generate the C++ image header in the ignored build
-directory. CI checks that the generated image matches the SVG source.
+The boot splash and standby share their cup drawing in
+`firmware/components/ui/src/cup_art.cpp`. To change it, update that helper and
+run `make screenshots` to regenerate the LVGL screenshots.
 
 For reproducible simulator evidence:
 `./sim/build/kaffeekasse-sim --screenshot /tmp/coffee.png --state standby`.

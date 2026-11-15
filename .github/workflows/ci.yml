@@ -84,8 +84,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y clang-format libcairo2 python3-venv
-      - run: make standby-tools
+      - run: sudo apt-get update && sudo apt-get install -y clang-format
       - run: make fmt-check
       - name: Validate I4 palette layout and matching admin artwork
         run: python3 tools/check_avatar_i4.py
@@ -93,19 +92,24 @@ jobs:
         run: |
           python3 tools/generate_avatar_art.py
           git diff --exit-code -- firmware/components/ui/src/avatar_art_generated.hpp web/src/components/avatarArt.generated.ts
-      - name: Test build-local standby image generation
-        run: make standby-cup-check
 
   simulator:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install simulator build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libcairo2 libsdl2-dev python3-venv zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev zlib1g-dev
       - name: Click/hit-test smoke test
         run: make test-ui
       - name: Deterministic screenshots
         run: make screenshots-check
+      - name: Upload generated standby screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: standby-screenshot-capture
+          path: /tmp/kaffeekasse-screenshots/06-coffee-standby.png
+          if-no-files-found: warn
 
   preview-container:
     runs-on: ubuntu-24.04
