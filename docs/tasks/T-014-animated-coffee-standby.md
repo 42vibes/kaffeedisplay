@@ -26,4 +26,5 @@ PR: Draft #36 — https://github.com/Babo96/kaffeedisplay/pull/36
 ## Evidence
 
 - [Standby screenshot](../ui/screenshots/06-coffee-standby.png) generated from the real LVGL simulator.
+- The boot splash and standby share the native LVGL cup shapes in `cup_art.cpp`.
 - [PR #36 and current CI](https://github.com/Babo96/kaffeedisplay/pull/36/checks).
