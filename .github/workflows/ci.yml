@@ -103,13 +103,6 @@ jobs:
         run: make test-ui
       - name: Deterministic screenshots
         run: make screenshots-check
-      - name: Upload generated standby screenshot
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: standby-screenshot-capture
-          path: /tmp/kaffeekasse-screenshots/06-coffee-standby.png
-          if-no-files-found: warn
 
   preview-container:
     runs-on: ubuntu-24.04
