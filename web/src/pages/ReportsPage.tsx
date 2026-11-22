@@ -68,6 +68,18 @@ export function ReportsPage() {
   const csvExcelHref = api.reportCsvUrl(params, "csv_excel");
   const csvRawHref = api.reportCsvUrl(params, "csv_raw");
 
+  /**
+   * Start the download as a plain navigation.
+   *
+   * The click handler must stay synchronous: an `await` before this line puts
+   * the navigation outside the user-activation window and iOS Safari drops the
+   * download. A Blob + object URL is not used for the same reason, and because
+   * the device already answers with `Content-Disposition: attachment`.
+   */
+  const startDownload = (href: string) => {
+    window.location.assign(href);
+  };
+
   const retry = () => {
     report.reload();
   };
@@ -79,26 +91,22 @@ export function ReportsPage() {
         subtitle={de.reportHint}
         actions={
           <>
-            <a
-              className={`btn ${downloadBlocked ? "pointer-events-none opacity-50" : ""}`}
-              href={downloadBlocked ? undefined : csvExcelHref}
-              aria-disabled={downloadBlocked}
-              onClick={(event) => {
-                if (downloadBlocked) event.preventDefault();
-              }}
+            <button
+              className="btn"
+              type="button"
+              disabled={downloadBlocked}
+              onClick={() => startDownload(csvExcelHref)}
             >
               {de.csvExcel}
-            </a>
-            <a
-              className={`btn ${downloadBlocked ? "pointer-events-none opacity-50" : ""}`}
-              href={downloadBlocked ? undefined : csvRawHref}
-              aria-disabled={downloadBlocked}
-              onClick={(event) => {
-                if (downloadBlocked) event.preventDefault();
-              }}
+            </button>
+            <button
+              className="btn"
+              type="button"
+              disabled={downloadBlocked}
+              onClick={() => startDownload(csvRawHref)}
             >
               {de.csvRaw}
-            </a>
+            </button>
           </>
         }
       />
