@@ -370,6 +370,18 @@ function sendCsv(res, filename, body) {
   res.end(body);
 }
 
+/** Mirror of reports::report_filename in the firmware. */
+function reportFilename(kind, period, from, to) {
+  const berlinDate = (seconds) =>
+    new Date(seconds * 1000).toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+  if (period === "all") return `kaffeekasse_all_${kind}.csv`;
+  if (period === "custom" && from && to) {
+    return `kaffeekasse_${berlinDate(Number(from))}_${berlinDate(Number(to) - 1)}_${kind}.csv`;
+  }
+  const anchor = from ? Number(from) : Math.floor(Date.now() / 1000);
+  return `kaffeekasse_${berlinDate(anchor).slice(0, 7)}_${kind}.csv`;
+}
+
 function readRaw(req) {
   return new Promise((resolve) => {
     let data = "";
@@ -1334,10 +1346,9 @@ const server = http.createServer(async (req, res) => {
     if (format === "csv_excel" || format === "csv_raw") {
       const report = buildReport(kind, period, from, to);
       const body = toCsv(report, format);
-      const month = new Date().toISOString().slice(0, 7);
       const prefix = format === "csv_excel" ? "\uFEFF" : "";
       const sep = format === "csv_excel" ? "sep=;\r\n" : "";
-      return sendCsv(res, `kaffeekasse_${month}_${kind}.csv`, prefix + sep + body);
+      return sendCsv(res, reportFilename(kind, period, from, to), prefix + sep + body);
     }
     return json(res, 200, buildReport(kind, period, from, to));
   }

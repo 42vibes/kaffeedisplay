@@ -112,7 +112,7 @@ test("downloads an Excel-compatible CSV report with a period filename", async ({
   await expect(page.getByRole("heading", { name: "Berichte" })).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "CSV (Excel)" }).click();
+  await page.getByRole("link", { name: "CSV (Excel)" }).click();
   const download = await downloadPromise;
 
   expect(download.suggestedFilename()).toMatch(/^kaffeekasse_\d{4}-\d{2}_overview\.csv$/);
@@ -128,9 +128,9 @@ test("downloads an Excel-compatible CSV report with a period filename", async ({
   await expect(page.getByText("01.03.2026 – 31.03.2026")).toBeVisible();
 
   const customDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "CSV (Excel)" }).click();
+  await page.getByRole("link", { name: "CSV (Excel)" }).click();
   expect((await customDownload).suggestedFilename()).toBe(
-    "kaffeekasse_2026-03_overview.csv",
+    "kaffeekasse_2026-03-01_2026-03-31_overview.csv",
   );
 });
 

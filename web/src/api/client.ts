@@ -138,7 +138,9 @@ export function downloadText(filename: string, content: string, mime: string) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  // Mobile Safari and Android WebViews consume the object URL asynchronously;
+  // revoking it in the same tick aborts the download ("download failed").
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export { request, BASE };

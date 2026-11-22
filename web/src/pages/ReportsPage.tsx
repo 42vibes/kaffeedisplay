@@ -1,12 +1,10 @@
 import { useMemo, useState } from "react";
 import { api, type ReportRequest } from "../api/endpoints";
-import { downloadText } from "../api/client";
 import type { ReportColumn, ReportKind, ReportPayload, ReportPeriod, ReportSection } from "../api/types";
 import { Alert } from "../components/Alert";
 import { DataTable } from "../components/DataTable";
 import { PageHeader } from "../components/PageHeader";
 import { de } from "../i18n/de";
-import { errorText } from "../lib/errors";
 import {
   dateInputValue,
   formatDateInZone,
@@ -14,7 +12,7 @@ import {
   formatEuro,
   formatInteger,
 } from "../lib/format";
-import { monthKeyInZone, periodRange } from "../lib/period";
+import { periodRange } from "../lib/period";
 import { reportSummary, timeQualityState } from "../lib/report";
 import { useAsync } from "../lib/useAsync";
 
@@ -51,9 +49,7 @@ export function ReportsPage() {
   );
   const invalidRange =
     period === "custom" &&
-    range.from !== undefined &&
-    range.to !== undefined &&
-    range.from >= range.to;
+    (range.from === undefined || range.to === undefined || range.from >= range.to);
 
   const params: ReportRequest = {
     kind,
@@ -68,29 +64,9 @@ export function ReportsPage() {
     [requestKey],
   );
 
-  const [downloading, setDownloading] = useState<"csv_excel" | "csv_raw" | "">("");
-  const [notice, setNotice] = useState("");
-
-  async function download(format: "csv_excel" | "csv_raw") {
-    if (invalidRange) {
-      setNotice(de.invalidRange);
-      return;
-    }
-    setDownloading(format);
-    setNotice("");
-    try {
-      const text = await api.reportCsv(params, format);
-      const filenameSeconds = range.from ?? Math.floor(Date.now() / 1000);
-      const filename = `kaffeekasse_${monthKeyInZone(filenameSeconds)}_${kind}.csv`;
-      const body = format === "csv_excel" && !text.startsWith("\uFEFF") ? `\uFEFF${text}` : text;
-      downloadText(filename, body, "text/csv;charset=utf-8");
-      setNotice(de.exportSuccess);
-    } catch (err) {
-      setNotice(errorText(err));
-    } finally {
-      setDownloading("");
-    }
-  }
+  const downloadBlocked = invalidRange || report.error !== "";
+  const csvExcelHref = api.reportCsvUrl(params, "csv_excel");
+  const csvRawHref = api.reportCsvUrl(params, "csv_raw");
 
   const retry = () => {
     report.reload();
@@ -103,27 +79,29 @@ export function ReportsPage() {
         subtitle={de.reportHint}
         actions={
           <>
-            <button
-              className="btn"
-              type="button"
-              onClick={() => download("csv_excel")}
-              disabled={downloading !== ""}
+            <a
+              className={`btn ${downloadBlocked ? "pointer-events-none opacity-50" : ""}`}
+              href={downloadBlocked ? undefined : csvExcelHref}
+              aria-disabled={downloadBlocked}
+              onClick={(event) => {
+                if (downloadBlocked) event.preventDefault();
+              }}
             >
-              {downloading === "csv_excel" ? de.downloading : de.csvExcel}
-            </button>
-            <button
-              className="btn"
-              type="button"
-              onClick={() => download("csv_raw")}
-              disabled={downloading !== ""}
+              {de.csvExcel}
+            </a>
+            <a
+              className={`btn ${downloadBlocked ? "pointer-events-none opacity-50" : ""}`}
+              href={downloadBlocked ? undefined : csvRawHref}
+              aria-disabled={downloadBlocked}
+              onClick={(event) => {
+                if (downloadBlocked) event.preventDefault();
+              }}
             >
-              {downloading === "csv_raw" ? de.downloading : de.csvRaw}
-            </button>
+              {de.csvRaw}
+            </a>
           </>
         }
       />
-
-      {notice ? <Alert tone={notice === de.exportSuccess ? "good" : "warn"}>{notice}</Alert> : null}
 
       <section className="card space-y-4 p-4 sm:p-5">
         <div>
