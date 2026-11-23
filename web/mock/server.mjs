@@ -1343,6 +1343,9 @@ const server = http.createServer(async (req, res) => {
     const from = url.searchParams.get("from") ?? undefined;
     const to = url.searchParams.get("to") ?? undefined;
     const format = url.searchParams.get("format") ?? "json";
+    if (period === "custom" && (!from || !to || Number(from) >= Number(to))) {
+      return json(res, 400, { code: "invalid_input", message: "Zeitraum ist ungültig" });
+    }
     if (format === "csv_excel" || format === "csv_raw") {
       const report = buildReport(kind, period, from, to);
       const body = toCsv(report, format);

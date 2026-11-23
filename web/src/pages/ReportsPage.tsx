@@ -59,22 +59,27 @@ export function ReportsPage() {
   };
   const requestKey = `${kind}|${period}|${period === "custom" ? `${customFrom}|${customTo}` : ""}`;
 
-  const report = useAsync<ReportPayload>(
-    () => api.report(params),
-    [requestKey],
+  // An invalid range is a local condition: issuing the request would only
+  // produce a 400 from the device alongside the range alert.
+  const report = useAsync<ReportPayload | null>(
+    () => (invalidRange ? Promise.resolve(null) : api.report(params)),
+    [requestKey, invalidRange],
   );
 
-  const downloadBlocked = invalidRange || report.error !== "";
+  // Only local validation blocks the export. A failed JSON fetch may be
+  // transient and does not necessarily predict a failed CSV request.
+  const downloadBlocked = invalidRange;
   const csvExcelHref = api.reportCsvUrl(params, "csv_excel");
   const csvRawHref = api.reportCsvUrl(params, "csv_raw");
 
   /**
    * Start the download as a plain navigation.
    *
-   * The click handler must stay synchronous: an `await` before this line puts
-   * the navigation outside the user-activation window and iOS Safari drops the
-   * download. A Blob + object URL is not used for the same reason, and because
-   * the device already answers with `Content-Disposition: attachment`.
+   * Nothing asynchronous happens before the navigation: mobile browsers bind
+   * the download to the tap, and the previous Blob path both fetched first and
+   * revoked the object URL in the same tick, which aborted the download on
+   * mobile. The device already answers with `Content-Disposition: attachment`,
+   * so the browser can handle the response itself.
    */
   const startDownload = (href: string) => {
     window.location.assign(href);
