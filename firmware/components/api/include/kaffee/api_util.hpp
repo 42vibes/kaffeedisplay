@@ -138,6 +138,16 @@ struct TimeRange {
 std::optional<TimeRange> month_range_utc(int year, int month);
 std::optional<TimeRange> parse_month_range(std::string_view yyyy_mm);
 
+// --- Expenses ------------------------------------------------------------
+
+// Returns an owned copy of the expense with this id.
+//
+// Deliberately by value: `KaffeeService::expenses()` hands out a fresh vector
+// on every call, so returning a pointer or reference would leave callers with
+// an iterator into a destroyed container. An earlier version did exactly that
+// and read freed memory while building the POST/PATCH responses.
+std::optional<Expense> find_expense(const std::vector<Expense>& expenses, std::string_view id);
+
 // --- Misc ----------------------------------------------------------------
 
 std::string trim(std::string_view value);

@@ -23,6 +23,13 @@ constexpr const char* kTag = "kaffee.api";
 // thread_local object with a global constructor on the device.
 std::string t_response_request_id;
 
+// Matched route pattern and method, pointing into the static route table.
+// Never the raw URI: it carries user-controlled query parameters that must not
+// reach the serial log, and the ring's redaction does not filter the lines that
+// are forwarded to vprintf.
+const char* t_response_method = "";
+const char* t_response_route = "";
+
 httpd_method_t to_httpd_method(RouteMethod method) {
     switch (method) {
         case RouteMethod::Get:
@@ -155,13 +162,25 @@ esp_err_t dispatch_entry(httpd_req_t* req) {
         }
 
         t_response_request_id = ctx.request_id;
+        t_response_method = route_method_name(spec.method);
+        t_response_route = spec.pattern;
         esp_err_t result = ESP_OK;
         try {
             result = handlers[i](ctx);
         } catch (...) {
+            // A throw may happen before or after a commit; the line only
+            // records that the handler did not return normally.
+            ESP_LOGE(kTag, "%s %s [%s] -> 500 exception", t_response_method, t_response_route,
+                     t_response_request_id.c_str());
             result = send_error(req, 500, "internal_error", "Interner Fehler");
         }
+        if (result != ESP_OK) {
+            ESP_LOGW(kTag, "%s %s [%s] -> send failed: %s", t_response_method, t_response_route,
+                     t_response_request_id.c_str(), esp_err_to_name(result));
+        }
         t_response_request_id.clear();
+        t_response_method = "";
+        t_response_route = "";
         return result;
     }
 
@@ -375,6 +394,13 @@ esp_err_t send_error(httpd_req_t* req, int status, std::string_view code,
 
 esp_err_t send_service_error(httpd_req_t* req, const Error& error) {
     const ErrorMapping mapping = map_service_error(error);
+    // Server-side failures are otherwise invisible once the client shows its
+    // generic message. Route, request id and the service code are enough to
+    // tell one class of failure from another; never log the payload.
+    if (mapping.status >= 500) {
+        ESP_LOGE(kTag, "%s %s [%s] -> %d %s", t_response_method, t_response_route,
+                 t_response_request_id.c_str(), mapping.status, mapping.code.c_str());
+    }
     return send_error(req, mapping.status, mapping.code, mapping.message);
 }
 

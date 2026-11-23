@@ -739,6 +739,15 @@ std::optional<TimeRange> parse_month_range(std::string_view yyyy_mm) {
     return month_range_utc(year, month);
 }
 
+// --- Expenses ------------------------------------------------------------
+
+std::optional<Expense> find_expense(const std::vector<Expense>& expenses, std::string_view id) {
+    for (const Expense& expense : expenses) {
+        if (expense.id == id) return expense;
+    }
+    return std::nullopt;
+}
+
 // --- Misc ----------------------------------------------------------------
 
 std::string trim(std::string_view value) {
