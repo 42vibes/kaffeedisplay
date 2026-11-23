@@ -13,6 +13,7 @@
 
 #include "kaffee/auth.hpp"
 #include "kaffee/file_store.hpp"
+#include "kaffee/journal_store.hpp"
 #include "kaffee/json.hpp"
 #include "kaffee/service.hpp"
 
@@ -161,7 +162,10 @@ class FailingSettingsStore final : public ISettingsStore {
         return inner.load();
     }
     Result<Unit> save(const Settings& settings) override {
-        if (fail_save) return Result<Unit>::fail("settings", "forced save failure");
+        ++saves;
+        if (fail_save || (fail_from_save != 0 && saves >= fail_from_save)) {
+            return Result<Unit>::fail("settings", "forced save failure");
+        }
         return inner.save(settings);
     }
     Result<Unit> reset() override {
@@ -184,6 +188,8 @@ class FailingSettingsStore final : public ISettingsStore {
     MemorySettingsStore inner;
     bool fail_load = false;
     bool fail_save = false;
+    int saves = 0;
+    int fail_from_save = 0;  // 1-based: fail this save and every later one
 };
 
 Event must_event(Result<Event> result) {
@@ -1035,4 +1041,110 @@ TEST_CASE("journal compaction is scheduled by the event threshold") {
     const bool has_snapshot = fs::exists(fixture.store.snapshot_path('a')) ||
                               fs::exists(fixture.store.snapshot_path('b'));
     CHECK(has_snapshot);
+}
+
+size_t count_events(KaffeeService& service, EventType type) {
+    size_t count = 0;
+    for (const Event& event : service.events()) {
+        if (event.type == type) ++count;
+    }
+    return count;
+}
+
+TEST_CASE("a failed settings audit reverts the change") {
+    TempDir dir;
+    FileEventStore store((dir.path / "events").string());
+    MemorySettingsStore settings_store;
+    FakePlatform platform;
+    configure_platform(platform);
+
+    auto created = KaffeeService::create(store, settings_store, platform);
+    REQUIRE(static_cast<bool>(created));
+    auto service = std::move(*created.value);
+
+    const Settings before = service->settings();
+    Settings update = before;
+    update.display.brightness_active = 37;
+    const size_t audits_before = count_events(*service, EventType::Audit);
+
+    store.set_fault_injection(JournalFault::ShortAppend);
+    auto audited = service->save_settings(update, "settings-audit-fail");
+    REQUIRE_FALSE(static_cast<bool>(audited));
+    CHECK(audited.error->code == "storage");
+    store.set_fault_injection(JournalFault::None);
+
+    // No audit event, and neither the live settings, the stored blob nor the
+    // platform may keep the new value.
+    CHECK(count_events(*service, EventType::Audit) == audits_before);
+    CHECK(service->settings().display.brightness_active == before.display.brightness_active);
+    CHECK(settings_store.stored().display.brightness_active == before.display.brightness_active);
+    CHECK(platform.display.brightness_active == before.display.brightness_active);
+
+    // The failed attempt recorded no request id, so the same id may be reused:
+    // it applies once and appends exactly one audit event.
+    auto retried = service->save_settings(update, "settings-audit-fail");
+    REQUIRE(static_cast<bool>(retried));
+    CHECK(count_events(*service, EventType::Audit) == audits_before + 1);
+    CHECK(service->settings().display.brightness_active == 37);
+
+    // Replaying the committed id must not append a second event.
+    auto replayed = service->save_settings(update, "settings-audit-fail");
+    REQUIRE(static_cast<bool>(replayed));
+    CHECK(count_events(*service, EventType::Audit) == audits_before + 1);
+}
+
+TEST_CASE("settings rollback keeps the effective AP name") {
+    TempDir dir;
+    FileEventStore store((dir.path / "events").string());
+    MemorySettingsStore settings_store;
+    FakePlatform platform;
+    configure_platform(platform);
+    // The device runs with a name that is not stored in the settings blob.
+    platform.network.ap_ssid = "Kaffee-Fund";
+
+    auto created = KaffeeService::create(store, settings_store, platform);
+    REQUIRE(static_cast<bool>(created));
+    auto service = std::move(*created.value);
+    const Settings before = service->settings();
+    REQUIRE(before.network.ap_ssid.empty());
+
+    Settings update = before;
+    update.network.ap_ssid = "Neuer-Name";
+
+    store.set_fault_injection(JournalFault::ShortAppend);
+    auto audited = service->save_settings(update, "settings-ssid-rollback");
+    REQUIRE_FALSE(static_cast<bool>(audited));
+    store.set_fault_injection(JournalFault::None);
+
+    // An empty stored name means "keep the current one", so the compensation
+    // must reapply the effective name, not the empty one.
+    CHECK(platform.network_settings.ap_ssid == "Kaffee-Fund");
+    // The stored blob keeps the original value; the rollback invents nothing.
+    CHECK(settings_store.stored().network.ap_ssid.empty());
+}
+
+TEST_CASE("a failed settings rollback is reported on its own") {
+    TempDir dir;
+    FileEventStore store((dir.path / "events").string());
+    FailingSettingsStore settings_store;
+    FakePlatform platform;
+    configure_platform(platform);
+
+    auto created = KaffeeService::create(store, settings_store, platform);
+    REQUIRE(static_cast<bool>(created));
+    auto service = std::move(*created.value);
+
+    Settings update = service->settings();
+    update.display.brightness_active = 37;
+
+    // The settings write goes through, the compensating write does not.
+    settings_store.fail_from_save = settings_store.saves + 2;
+    store.set_fault_injection(JournalFault::ShortAppend);
+
+    auto audited = service->save_settings(update, "settings-rollback-fails");
+    REQUIRE_FALSE(static_cast<bool>(audited));
+    CHECK(audited.error->code == "settings_rollback_failed");
+
+    store.set_fault_injection(JournalFault::None);
+    settings_store.fail_from_save = 0;
 }
