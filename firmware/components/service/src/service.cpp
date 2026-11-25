@@ -1155,34 +1155,68 @@ Result<Unit> KaffeeServiceImpl::save_settings(const Settings& input,
         // previous settings blob and live state; a save failure leaves the
         // device untouched.
         const Settings previous = settings_;
-        auto rollback = [&]() {
-            (void)settings_store_.save(previous);
-            (void)platform_.apply_display_settings(previous.display);
-            (void)platform_.apply_network_settings(previous.network);
-            (void)platform_.apply_time_settings(previous.time);
+        // An empty AP name in the stored settings means "keep whatever the
+        // device is running". Compensating with an empty value would therefore
+        // leave a freshly applied name in place, so the effective name is
+        // captured for the rollback only; the stored blob keeps the original.
+        NetworkSettings compensation_network = previous.network;
+        if (compensation_network.ap_ssid.empty()) {
+            compensation_network.ap_ssid = platform_.network_status().ap_ssid;
+        }
+        // Best-effort compensation: the settings blob and the journal live in
+        // different stores, so no ordering can make this atomic. Every step is
+        // attempted and the first failure is returned, so a broken rollback is
+        // reported instead of being swallowed.
+        auto rollback = [&]() -> Result<Unit> {
+            Result<Unit> first = Result<Unit>::ok(Unit{});
+            auto remember = [&first](Result<Unit> result) {
+                if (!result && first) first = std::move(result);
+            };
+            remember(settings_store_.save(previous));
+            remember(platform_.apply_display_settings(previous.display));
+            remember(platform_.apply_network_settings(compensation_network));
+            remember(platform_.apply_time_settings(previous.time));
+            return first;
         };
+
+        // Serialise the audit payload before touching storage. If this throws,
+        // nothing has been written yet and the device stays untouched.
+        const std::string meta = settings_to_json(merged, false).dump();
 
         auto saved = settings_store_.save(merged);
         if (!saved) return saved;
         auto applied = platform_.apply_display_settings(merged.display);
         if (!applied) {
-            rollback();
+            (void)rollback();
             return applied;
         }
         auto network = platform_.apply_network_settings(merged.network);
         if (!network) {
-            rollback();
+            (void)rollback();
             return network;
         }
         auto time = platform_.apply_time_settings(merged.time);
         if (!time) {
-            rollback();
+            (void)rollback();
             return time;
         }
 
         settings_ = merged;
-        const std::string meta = settings_to_json(settings_, false).dump();
-        return audit_locked("settings_updated", meta, request_id, "admin");
+        auto audited = audit_locked("settings_updated", meta, request_id, "admin");
+        if (!audited) {
+            // The audit event belongs to the write. Revert both instead of
+            // reporting an error for a change that stays active, and report a
+            // failed compensation on its own so it cannot go unnoticed.
+            settings_ = previous;
+            if (const Result<Unit> reverted = rollback(); !reverted) {
+                return Result<Unit>::fail("settings_rollback_failed",
+                                          "Einstellungen konnten nach dem fehlgeschlagenen "
+                                          "Audit-Eintrag nicht vollständig "
+                                          "wiederhergestellt werden");
+            }
+            return audited;
+        }
+        return audited;
     });
 }
 
