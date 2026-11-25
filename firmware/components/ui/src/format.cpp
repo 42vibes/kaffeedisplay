@@ -222,4 +222,27 @@ std::string rotation_label(int degrees) {
     return std::to_string(degrees) + strings::COMMON_DEGREE;
 }
 
+SdBackupStatus sd_backup_status(bool card_present, bool backup_ok, Timestamp last_success,
+                                bool has_error) {
+    // Mirrors sd::kNoClockSuccess: a run succeeded while the wall clock was
+    // unset. The header never shows a time, so no 1970 can leak out.
+    constexpr Timestamp kNoClockSuccess = 1;
+
+    auto named = [](SdBackupState state, const char* word) {
+        SdBackupStatus status;
+        status.state = state;
+        status.value = std::string(strings::SYSTEM_SD) + " " + word;
+        return status;
+    };
+
+    if (!card_present) return named(SdBackupState::NotDetected, strings::SYSTEM_SD_NOT_DETECTED);
+    if (backup_ok) {
+        return named(last_success <= kNoClockSuccess ? SdBackupState::SavedWithoutClock
+                                                     : SdBackupState::Saved,
+                     strings::SYSTEM_SD_OK);
+    }
+    if (has_error) return named(SdBackupState::Error, strings::SYSTEM_SD_ERROR);
+    return named(SdBackupState::Present, strings::SYSTEM_SD_DETECTED);
+}
+
 }  // namespace kaffee::ui

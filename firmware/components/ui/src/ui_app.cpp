@@ -165,7 +165,8 @@ void UiAppImpl::build() {
     // see the flip.
 }
 
-lv_obj_t* UiAppImpl::build_header(lv_obj_t* parent, const char* title, lv_obj_t** clock_label) {
+lv_obj_t* UiAppImpl::build_header(lv_obj_t* parent, const char* title, lv_obj_t** clock_label,
+                                  lv_obj_t** sd_label) {
     lv_obj_t* header = lv_obj_create(parent);
     lv_obj_set_size(header, lv_pct(100), 56);
     lv_obj_set_pos(header, 0, 0);
@@ -178,7 +179,21 @@ lv_obj_t* UiAppImpl::build_header(lv_obj_t* parent, const char* title, lv_obj_t*
     lv_obj_set_style_pad_top(header, 8, 0);
     lv_obj_set_style_pad_bottom(header, 0, 0);
 
-    theme::make_label(header, title, theme::font_title_bold(), theme::color(theme::COLOR_TEXT));
+    lv_obj_t* title_label =
+        theme::make_label(header, title, theme::font_title_bold(), theme::color(theme::COLOR_TEXT));
+
+    if (sd_label != nullptr) {
+        // Backup state sits in the header band as plain text, so nothing above
+        // the WLAN card grows. The title takes the free space; one 16 px gap
+        // separates the state from the clock.
+        lv_obj_set_flex_grow(title_label, 1);
+        lv_obj_set_style_pad_column(header, 16, 0);
+
+        lv_obj_t* state =
+            theme::make_label(header, "", theme::font_body(), theme::color(theme::COLOR_MUTED));
+        *sd_label = state;
+    }
+
     lv_obj_t* clock =
         theme::make_label(header, "--:--", theme::font_body(), theme::color(theme::COLOR_MUTED));
     if (clock_label != nullptr) *clock_label = clock;

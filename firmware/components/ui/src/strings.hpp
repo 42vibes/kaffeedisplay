@@ -87,6 +87,14 @@ inline constexpr const char* SYSTEM_TIME_BROWSER = "Browser";
 inline constexpr const char* SYSTEM_TIME_SNTP = "SNTP";
 inline constexpr const char* SYSTEM_TIME_RESTORED = "Wiederhergestellt";
 inline constexpr const char* SYSTEM_TIME_UNSET = "Nicht gesetzt";
+// Backup status in the page-3 header: `SD` plus one short state word. The
+// state is carried by the word and its colour; no timestamp on the panel.
+inline constexpr const char* SYSTEM_SD = "SD";
+inline constexpr const char* SYSTEM_SD_NOT_DETECTED = "fehlt";
+inline constexpr const char* SYSTEM_SD_OK = "ok";
+inline constexpr const char* SYSTEM_SD_DETECTED = "erkannt";
+inline constexpr const char* SYSTEM_SD_ERROR = "Fehler";
+
 inline constexpr const char* SYSTEM_DEVICE = "Gerät";
 inline constexpr const char* SYSTEM_TEMPERATURE = "Chip-Temperatur";
 inline constexpr const char* SYSTEM_UPTIME = "Laufzeit";
