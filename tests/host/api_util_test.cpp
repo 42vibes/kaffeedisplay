@@ -1,7 +1,9 @@
 #include "doctest.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "kaffee/api_util.hpp"
 #include "kaffee/sha256.hpp"
@@ -247,4 +249,44 @@ TEST_CASE("streaming SHA-256 matches the one-shot helper") {
     }
     Sha256Stream empty;
     CHECK(empty.hex() == sha256_hex(""));
+}
+
+TEST_CASE("expense lookup hands out an owned copy") {
+    Expense first;
+    first.id = "exp-1";
+    first.category = "Wareneinkauf";
+    first.description = std::string(180, 'x');
+    first.vendor = "Rösterei";
+    first.amount_cents = 1234;
+    first.note = std::string(200, 'n');
+
+    Expense second;
+    second.id = "exp-2";
+    second.amount_cents = 9900;
+
+    std::vector<Expense> expenses{first, second};
+
+    const auto found = find_expense(expenses, "exp-2");
+    REQUIRE(found.has_value());
+    CHECK(found->id == "exp-2");
+    CHECK(found->amount_cents == 9900);
+
+    const auto long_one = find_expense(expenses, "exp-1");
+    REQUIRE(long_one.has_value());
+    CHECK(long_one->description.size() == 180);
+    CHECK(long_one->note.size() == 200);
+    CHECK(long_one->vendor == "Rösterei");
+
+    CHECK_FALSE(find_expense(expenses, "exp-missing").has_value());
+
+    // The result must stay valid after the container is gone; a pointer into
+    // the vector would dangle here.
+    std::optional<Expense> survivor;
+    {
+        std::vector<Expense> scratch{first};
+        survivor = find_expense(scratch, "exp-1");
+    }
+    REQUIRE(survivor.has_value());
+    CHECK(survivor->id == "exp-1");
+    CHECK(survivor->description.size() == 180);
 }

@@ -221,15 +221,8 @@ json event_json(KaffeeService& service, const Event& event) {
     return array.at(0);
 }
 
-const Expense* find_expense(KaffeeService& service, const std::string& id) {
-    for (const Expense& expense : service.expenses()) {
-        if (expense.id == id) return &expense;
-    }
-    return nullptr;
-}
-
 json expense_or_event(KaffeeService& service, const Event& event) {
-    if (const Expense* expense = find_expense(service, event.expense_id)) {
+    if (const std::optional<Expense> expense = find_expense(service.expenses(), event.expense_id)) {
         return expense_to_json(*expense);
     }
     json fallback = event_to_json(event);
@@ -745,19 +738,19 @@ esp_err_t handle_expenses_create(RequestContext& ctx) {
 esp_err_t handle_expenses_update(RequestContext& ctx) {
     KaffeeService& service = ctx.server.service();
     const std::string id = ctx.params.get("id").value_or("");
-    const Expense* existing = find_expense(service, id);
-    if (existing == nullptr) return send_error(ctx.req, 404, "not_found", "Ausgabe nicht gefunden");
+    const std::optional<Expense> existing = find_expense(service.expenses(), id);
+    if (!existing) return send_error(ctx.req, 404, "not_found", "Ausgabe nicht gefunden");
 
     Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
     if (!body) return send_service_error(ctx.req, result_error(body));
-    Result<ExpenseInput> input = parse_expense_input(*body.value, existing);
+    Result<ExpenseInput> input = parse_expense_input(*body.value, &*existing);
     if (!input) return send_service_error(ctx.req, result_error(input));
 
     Result<Event> event = service.update_expense(
         id, input.value->category, input.value->description, input.value->vendor,
         input.value->amount_cents, input.value->note, ctx.request_id);
     if (!event) return send_service_error(ctx.req, result_error(event));
-    if (const Expense* updated = find_expense(service, id)) {
+    if (const std::optional<Expense> updated = find_expense(service.expenses(), id)) {
         return send_json(ctx.req, 200, expense_to_json(*updated));
     }
     return send_json(ctx.req, 200, event_json(service, *event.value));
@@ -766,7 +759,7 @@ esp_err_t handle_expenses_update(RequestContext& ctx) {
 esp_err_t handle_expenses_void(RequestContext& ctx) {
     KaffeeService& service = ctx.server.service();
     const std::string id = ctx.params.get("id").value_or("");
-    if (find_expense(service, id) == nullptr) {
+    if (!find_expense(service.expenses(), id)) {
         return send_error(ctx.req, 404, "not_found", "Ausgabe nicht gefunden");
     }
     Result<json> body = read_json_object(ctx.req, kMaxJsonBody);
