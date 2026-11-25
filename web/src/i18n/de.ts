@@ -296,8 +296,6 @@ export const de = {
   csvRaw: "CSV (Rohdaten)",
   download: "Herunterladen",
   downloading: "Wird erstellt …",
-  exportSuccess: "CSV-Datei heruntergeladen.",
-  exportFailed: "CSV-Export fehlgeschlagen.",
   reportEmpty: "Für diesen Zeitraum liegen keine Daten vor.",
   timeQuality: "Zeitqualität",
   trustedTime: "Zeit synchronisiert",

@@ -102,14 +102,17 @@ describe("API client session handling", () => {
     expect(headers.get("X-Request-Id")).toBe("stable-id");
   });
 
-  it("asks for text/csv on report downloads", async () => {
-    const calls = installFetch(() => response("Kennzahl;Wert\r\n", "text/csv"));
-    const csv = await api.reportCsv(
-      { kind: "overview", period: "month" },
-      "csv_excel",
+  it("builds a same-origin CSV download URL the browser can navigate to", () => {
+    expect(api.reportCsvUrl({ kind: "overview", period: "month" }, "csv_excel")).toBe(
+      "/api/v1/reports/overview?period=month&format=csv_excel",
     );
-    expect(csv).toContain("Kennzahl");
-    const headers = new Headers(calls[0]?.init?.headers);
-    expect(headers.get("Accept")).toBe("text/csv");
+    expect(
+      api.reportCsvUrl(
+        { kind: "balances", period: "custom", from: 1772323200, to: 1775001600 },
+        "csv_raw",
+      ),
+    ).toBe(
+      "/api/v1/reports/balances?period=custom&from=1772323200&to=1775001600&format=csv_raw",
+    );
   });
 });

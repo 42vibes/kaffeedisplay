@@ -1,4 +1,4 @@
-import { request } from "./client";
+import { BASE, request } from "./client";
 import type {
   ApStatus,
   CashCount,
@@ -147,10 +147,16 @@ export const api = {
   // --- reports -------------------------------------------------------------
   report: (params: ReportRequest) =>
     request<ReportPayload>(`/reports/${params.kind}${reportQuery(params, "json")}`),
-  reportCsv: (params: ReportRequest, format: Exclude<ReportFormat, "json">) =>
-    request<string>(`/reports/${params.kind}${reportQuery(params, format)}`, {
-      accept: "text/csv",
-    }),
+  /**
+   * Same-origin download URL for a report CSV.
+   *
+   * The browser performs the request itself and uses the server's
+   * `Content-Disposition` filename. Fetching into a Blob first breaks mobile
+   * Safari: the click would happen after an `await`, outside the user
+   * activation window, and the download is dropped.
+   */
+  reportCsvUrl: (params: ReportRequest, format: Exclude<ReportFormat, "json">) =>
+    `${BASE}/reports/${params.kind}${reportQuery(params, format)}`,
 
   // --- settings ------------------------------------------------------------
   settings: () => request<Settings>("/settings"),

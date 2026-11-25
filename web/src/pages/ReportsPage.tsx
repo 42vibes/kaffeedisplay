@@ -1,12 +1,10 @@
 import { useMemo, useState } from "react";
 import { api, type ReportRequest } from "../api/endpoints";
-import { downloadText } from "../api/client";
 import type { ReportColumn, ReportKind, ReportPayload, ReportPeriod, ReportSection } from "../api/types";
 import { Alert } from "../components/Alert";
 import { DataTable } from "../components/DataTable";
 import { PageHeader } from "../components/PageHeader";
 import { de } from "../i18n/de";
-import { errorText } from "../lib/errors";
 import {
   dateInputValue,
   formatDateInZone,
@@ -14,7 +12,7 @@ import {
   formatEuro,
   formatInteger,
 } from "../lib/format";
-import { monthKeyInZone, periodRange } from "../lib/period";
+import { periodRange } from "../lib/period";
 import { reportSummary, timeQualityState } from "../lib/report";
 import { useAsync } from "../lib/useAsync";
 
@@ -51,9 +49,7 @@ export function ReportsPage() {
   );
   const invalidRange =
     period === "custom" &&
-    range.from !== undefined &&
-    range.to !== undefined &&
-    range.from >= range.to;
+    (range.from === undefined || range.to === undefined || range.from >= range.to);
 
   const params: ReportRequest = {
     kind,
@@ -63,34 +59,31 @@ export function ReportsPage() {
   };
   const requestKey = `${kind}|${period}|${period === "custom" ? `${customFrom}|${customTo}` : ""}`;
 
-  const report = useAsync<ReportPayload>(
-    () => api.report(params),
-    [requestKey],
+  // An invalid range is a local condition: issuing the request would only
+  // produce a 400 from the device alongside the range alert.
+  const report = useAsync<ReportPayload | null>(
+    () => (invalidRange ? Promise.resolve(null) : api.report(params)),
+    [requestKey, invalidRange],
   );
 
-  const [downloading, setDownloading] = useState<"csv_excel" | "csv_raw" | "">("");
-  const [notice, setNotice] = useState("");
+  // Only local validation blocks the export. A failed JSON fetch may be
+  // transient and does not necessarily predict a failed CSV request.
+  const downloadBlocked = invalidRange;
+  const csvExcelHref = api.reportCsvUrl(params, "csv_excel");
+  const csvRawHref = api.reportCsvUrl(params, "csv_raw");
 
-  async function download(format: "csv_excel" | "csv_raw") {
-    if (invalidRange) {
-      setNotice(de.invalidRange);
-      return;
-    }
-    setDownloading(format);
-    setNotice("");
-    try {
-      const text = await api.reportCsv(params, format);
-      const filenameSeconds = range.from ?? Math.floor(Date.now() / 1000);
-      const filename = `kaffeekasse_${monthKeyInZone(filenameSeconds)}_${kind}.csv`;
-      const body = format === "csv_excel" && !text.startsWith("\uFEFF") ? `\uFEFF${text}` : text;
-      downloadText(filename, body, "text/csv;charset=utf-8");
-      setNotice(de.exportSuccess);
-    } catch (err) {
-      setNotice(errorText(err));
-    } finally {
-      setDownloading("");
-    }
-  }
+  /**
+   * Start the download as a plain navigation.
+   *
+   * Nothing asynchronous happens before the navigation: mobile browsers bind
+   * the download to the tap, and the previous Blob path both fetched first and
+   * revoked the object URL in the same tick, which aborted the download on
+   * mobile. The device already answers with `Content-Disposition: attachment`,
+   * so the browser can handle the response itself.
+   */
+  const startDownload = (href: string) => {
+    window.location.assign(href);
+  };
 
   const retry = () => {
     report.reload();
@@ -106,24 +99,22 @@ export function ReportsPage() {
             <button
               className="btn"
               type="button"
-              onClick={() => download("csv_excel")}
-              disabled={downloading !== ""}
+              disabled={downloadBlocked}
+              onClick={() => startDownload(csvExcelHref)}
             >
-              {downloading === "csv_excel" ? de.downloading : de.csvExcel}
+              {de.csvExcel}
             </button>
             <button
               className="btn"
               type="button"
-              onClick={() => download("csv_raw")}
-              disabled={downloading !== ""}
+              disabled={downloadBlocked}
+              onClick={() => startDownload(csvRawHref)}
             >
-              {downloading === "csv_raw" ? de.downloading : de.csvRaw}
+              {de.csvRaw}
             </button>
           </>
         }
       />
-
-      {notice ? <Alert tone={notice === de.exportSuccess ? "good" : "warn"}>{notice}</Alert> : null}
 
       <section className="card space-y-4 p-4 sm:p-5">
         <div>

@@ -130,8 +130,14 @@ test("downloads an Excel-compatible CSV report with a period filename", async ({
   const customDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "CSV (Excel)" }).click();
   expect((await customDownload).suggestedFilename()).toBe(
-    "kaffeekasse_2026-03_overview.csv",
+    "kaffeekasse_2026-03-01_2026-03-31_overview.csv",
   );
+
+  // A cleared bound is a local validation error: no request, one alert, inert buttons.
+  await page.getByLabel("Startdatum").fill("");
+  await expect(page.getByText("Das Startdatum muss vor dem Enddatum liegen.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "CSV (Excel)" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Erneut versuchen" })).toHaveCount(0);
 });
 
 test("product CRUD sends a full ProductInput for reorder and archive", async ({ page }) => {
